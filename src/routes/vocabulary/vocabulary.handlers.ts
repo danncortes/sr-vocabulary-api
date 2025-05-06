@@ -1,7 +1,7 @@
 import { createSBClient } from "../../superbaseClient.js";
-import { addDaysToDate } from "../../utils/dates.js";
+import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
 
-export const getNewVocabulary = async (req: any, res: any): Promise<any> => {
+export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     try {
         const token = req.headers.authorization?.replace('Bearer ', '');
         const supabase = createSBClient(token);
@@ -13,19 +13,23 @@ export const getNewVocabulary = async (req: any, res: any): Promise<any> => {
             sr_stage_id,
             review_date,
             priority,
-            original_phrase:phrases!phrase_id (
+            modified_at,
+            original:phrases!phrase_id (
+                id,
                 text,
                 audio_url
             ),
-            translated_phrase:phrases!translated_phrase_id (
+            translated:phrases!translated_phrase_id (
+                id,
                 text,
                 audio_url
             )
         `)
-            .eq('learned', 0)
-            .eq('review_date', "NULL")
+            .not('original', 'is', null)
+            .not('translated', 'is', null)
             .order('priority', { ascending: true })
-            .limit(12);
+            .order('review_date', { ascending: true })
+            .order('id', { ascending: true });
 
         if (error) {
             return res.status(500).json({ error: error.message });
@@ -33,40 +37,6 @@ export const getNewVocabulary = async (req: any, res: any): Promise<any> => {
 
         return res.status(200).send(data);
 
-    } catch (error) {
-        return res.status(500).json({ error: error });
-    }
-}
-
-export const getReviewVocabulary = async (req: any, res: any): Promise<any> => {
-    try {
-        const token = req.headers.authorization?.replace('Bearer ', '');
-        const supabase = createSBClient(token);
-
-        const { data, error } = await supabase
-            .from('phrase_translations')
-            .select(`
-                id,
-                sr_stage_id,
-                review_date,
-                original_phrase:phrases!phrase_id (
-                    text,
-                    audio_url
-                ),
-                translated_phrase:phrases!translated_phrase_id (
-                    text,
-                    audio_url
-                )
-            `)
-            .eq('learned', 0)
-            .gt('sr_stage_id', 0)
-            .lte('review_date', new Date().toISOString().split('T')[0]);
-
-        if (error) {
-            return res.status(500).json({ error: error.message });
-        }
-
-        return res.status(200).send(data);
     } catch (error) {
         return res.status(500).json({ error: error });
     }
@@ -82,7 +52,6 @@ const getVocabulary = (id: number, token: string) => {
 
 export const setVocabularyReviewed = async (req: any, res: any): Promise<any> => {
     try {
-
         const token = req.headers.authorization?.replace('Bearer ', '');
         const supabase = createSBClient(token);
 
@@ -96,6 +65,7 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
 
         const { review_date, sr_stage_id } = vocabulary.data[0];
 
+
         const stages = await supabase
             .from('stages')
             .select('*')
@@ -106,7 +76,17 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
         }
 
         const { days } = stages.data[0];
-        const newReviewDate = addDaysToDate(review_date, days);
+
+        let newReviewDate = addDaysToDate(review_date, days);
+        const todaysDay = getTodaysDay();
+
+        if (sr_stage_id === 0 && !['Monday', 'Tuesday'].includes(todaysDay)) {
+            const nextLearnDay = getNextDateByDay('Monday');
+            newReviewDate = addDaysToDate(nextLearnDay, days);
+        } else if (sr_stage_id > 0 && isDateLessThanToday(review_date)) {
+            const nextReviewDate = getNextDateByDay('Wednesday');
+            newReviewDate = addDaysToDate(nextReviewDate, days);
+        }
 
         const { data, error } = await supabase
             .from('phrase_translations')
@@ -114,13 +94,13 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
                 sr_stage_id: sr_stage_id + 1,
                 review_date: newReviewDate
             })
-            .eq('id', id);
+            .eq('id', id).select();
 
         if (error) {
             return res.status(500).json({ error: error.message });
         }
 
-        return res.status(200).send(data);
+        return res.status(200).send(data[0]);
 
     } catch (error) {
         return res.status(500).json({ error: error });

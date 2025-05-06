@@ -1,3 +1,29 @@
+export type Days = [
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday'
+];
+
+export function getTodaysDay(): string {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const weekDays: Days = [
+        'Sunday',
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday'
+    ];
+    return weekDays[dayOfWeek];
+}
+
+
 export function addDaysToDate(date: string, days: number): string {
     let dateObj = new Date(date);
     if ([null, "NULL", ""].includes(date)) {
