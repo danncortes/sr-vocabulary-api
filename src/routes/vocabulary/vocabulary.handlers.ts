@@ -14,6 +14,7 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
             review_date,
             priority,
             modified_at,
+            learned,
             original:phrases!phrase_id (
                 id,
                 text,
@@ -27,6 +28,8 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
         `)
             .not('original', 'is', null)
             .not('translated', 'is', null)
+            .not('original.audio_url', 'is', null)
+            .not('translated.audio_url', 'is', null)
             .order('priority', { ascending: true })
             .order('review_date', { ascending: true })
             .order('id', { ascending: true });
@@ -63,13 +66,14 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
             return res.status(500).json({ error: vocabulary.error.message });
         }
 
-        const { review_date, sr_stage_id } = vocabulary.data[0];
+        const { review_date, sr_stage_id, learned: isLearned } = vocabulary.data[0];
 
-
+        const newStageId = sr_stage_id + 1;
+        const learned = newStageId === 6 ? 1 : isLearned
         const stages = await supabase
             .from('stages')
             .select('*')
-            .eq('id', sr_stage_id + 1);
+            .eq('id', newStageId);
 
         if (stages.error) {
             return res.status(500).json({ error: stages.error.message });
@@ -77,22 +81,31 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
 
         const { days } = stages.data[0];
 
-        let newReviewDate = addDaysToDate(review_date, days);
+        let newReviewDate: string | null = addDaysToDate(review_date, days);
         const todaysDay = getTodaysDay();
+
+        // TODO - Review and learn days should come from the DB user settings.
 
         if (sr_stage_id === 0 && !['Monday', 'Tuesday'].includes(todaysDay)) {
             const nextLearnDay = getNextDateByDay('Monday');
             newReviewDate = addDaysToDate(nextLearnDay, days);
-        } else if (sr_stage_id > 0 && isDateLessThanToday(review_date)) {
-            const nextReviewDate = getNextDateByDay('Wednesday');
-            newReviewDate = addDaysToDate(nextReviewDate, days);
+        } else if (sr_stage_id > 0 && sr_stage_id < 6 && isDateLessThanToday(review_date)) {
+            if (['Wednesday', 'Thursday'].includes(todaysDay)) {
+                newReviewDate = addDaysToDate('', days);
+            } else {
+                const nextReviewDate = getNextDateByDay('Wednesday');
+                newReviewDate = addDaysToDate(nextReviewDate, days);
+            }
+        } else {
+            newReviewDate = null
         }
 
         const { data, error } = await supabase
             .from('phrase_translations')
             .update({
-                sr_stage_id: sr_stage_id + 1,
-                review_date: newReviewDate
+                sr_stage_id: newStageId,
+                review_date: newReviewDate,
+                leaned: learned
             })
             .eq('id', id).select();
 
