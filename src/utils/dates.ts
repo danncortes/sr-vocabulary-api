@@ -74,6 +74,12 @@ export function isDateLessThanToday(date: string) {
     return dateObj < today;
 }
 
+export function isDateMoreThanToday(date: string) {
+    const today = new Date();
+    const dateObj = new Date(date);
+    return dateObj > today;
+}
+
 export function isDateLessOrEqualThanToday(date: string) {
     const today = new Date();
     const dateObj = new Date(date);

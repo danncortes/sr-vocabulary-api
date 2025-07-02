@@ -1,3 +1,4 @@
+import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../superbaseClient.js";
 import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
 
@@ -87,16 +88,18 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
         // TODO - Review and learn days should come from the DB user settings.
 
         if (sr_stage_id === 0 && !['Monday', 'Tuesday'].includes(todaysDay)) {
-            const nextLearnDay = getNextDateByDay('Monday');
+            const nextLearnDay = getNextDateByDay('Tuesday');
             newReviewDate = addDaysToDate(nextLearnDay, days);
-        } else if (sr_stage_id > 0 && sr_stage_id < 6 && isDateLessThanToday(review_date)) {
-            if (['Wednesday', 'Thursday'].includes(todaysDay)) {
-                newReviewDate = addDaysToDate('', days);
-            } else {
-                const nextReviewDate = getNextDateByDay('Wednesday');
-                newReviewDate = addDaysToDate(nextReviewDate, days);
+        } else if (sr_stage_id > 0 && sr_stage_id < 6) {
+            if (isDateLessThanToday(review_date)) {
+                if (['Wednesday', 'Thursday'].includes(todaysDay)) {
+                    newReviewDate = addDaysToDate('', days);
+                } else {
+                    const nextReviewDate = getNextDateByDay('Wednesday');
+                    newReviewDate = addDaysToDate(nextReviewDate, days);
+                }
             }
-        } else {
+        } else if (sr_stage_id === 6) {
             newReviewDate = null
         }
 
@@ -105,7 +108,7 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
             .update({
                 sr_stage_id: newStageId,
                 review_date: newReviewDate,
-                leaned: learned
+                learned: learned
             })
             .eq('id', id).select();
 
@@ -120,34 +123,54 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
     }
 }
 
-export const delayVocabulary = async (req: any, res: any): Promise<any> => {
+const getManyVocabulary = (ids: number[], token: string) => {
+    const supabase = createSBClient(token);
+    return supabase
+        .from('phrase_translations')
+        .select('*')
+        .in('id', ids);
+}
+
+export const delayVocabulary = async (item: any, days: number, supabase: SupabaseClient<any, string, any>): Promise<any> => {
+    const { review_date } = item;
+    const newReviewDate = addDaysToDate(review_date, days);
+    const { data, error } = await supabase
+        .from('phrase_translations')
+        .update({
+            review_date: newReviewDate
+        })
+        .eq('id', item.id);
+
+    if (error) {
+        return { error: error.message };
+    }
+    return { data: { ...item, review_date: newReviewDate } }
+}
+
+export const delayManyVocabulary = async (req: any, res: any): Promise<any> => {
     try {
         const token = req.headers.authorization?.replace('Bearer ', '');
         const supabase = createSBClient(token);
-        const { id, delays_days } = req.body;
+        const { ids, days } = req.body;
 
-        const vocabulary = await getVocabulary(id, token);
+        const vocabulary = await getManyVocabulary(ids, token);
 
         if (vocabulary.error) {
             return res.status(500).json({ error: vocabulary.error.message });
         }
 
-        const { review_date } = vocabulary.data[0];
+        const newVocabulary = [];
 
-        const newReviewDate = addDaysToDate(review_date, delays_days);
+        for await (const item of vocabulary.data) {
+            const { data, error } = await delayVocabulary(item, days, supabase);
+            newVocabulary.push(data);
 
-        const { data, error } = await supabase
-            .from('phrase_translations')
-            .update({
-                review_date: newReviewDate
-            })
-            .eq('id', id);
-
-        if (error) {
-            return res.status(500).json({ error: error.message });
+            if (error) {
+                return res.status(500).json({ error: error.message });
+            }
         }
 
-        return res.status(200).send(data);
+        return res.status(200).send(newVocabulary);
 
     } catch (error) {
         return res.status(500).json({ error: error });
