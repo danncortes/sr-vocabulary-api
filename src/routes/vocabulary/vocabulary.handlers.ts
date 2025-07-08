@@ -87,10 +87,10 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
 
         // TODO - Review and learn days should come from the DB user settings.
 
-        if (sr_stage_id === 0 && !['Monday', 'Tuesday'].includes(todaysDay)) {
+        if (newStageId === 1 && !['Monday', 'Tuesday'].includes(todaysDay)) {
             const nextLearnDay = getNextDateByDay('Tuesday');
             newReviewDate = addDaysToDate(nextLearnDay, days);
-        } else if (sr_stage_id > 0 && sr_stage_id < 6) {
+        } else if (newStageId > 1 && newStageId < 6) {
             if (isDateLessThanToday(review_date)) {
                 if (['Wednesday', 'Thursday'].includes(todaysDay)) {
                     newReviewDate = addDaysToDate('', days);
@@ -99,7 +99,7 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
                     newReviewDate = addDaysToDate(nextReviewDate, days);
                 }
             }
-        } else if (sr_stage_id === 6) {
+        } else if (newStageId === 6) {
             newReviewDate = null
         }
 
