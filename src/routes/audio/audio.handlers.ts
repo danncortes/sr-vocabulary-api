@@ -1,3 +1,4 @@
+import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../superbaseClient.js";
 import { ElevenLabsClient } from 'elevenlabs';
 const { EVENLABS_API_KEY } = process.env;
@@ -5,6 +6,29 @@ const { EVENLABS_API_KEY } = process.env;
 const evenlabsClient = new ElevenLabsClient({
     apiKey: EVENLABS_API_KEY
 });
+
+let supabaseTempClient: SupabaseClient<any, string, any> | null = null;
+let tempToken = '';
+
+interface PhraseTranslationsResponse {
+    data: {
+        id: number;
+        priority: number;
+        original: {
+            id: number;
+            text: string;
+            audio_url: string;
+        };
+        translated: {
+            id: number;
+            text: string;
+            audio_url: string;
+        };
+    }[] | null,
+    error: {
+        message: string;
+    }
+}
 
 export const getAudio = async (req: any, res: any) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
@@ -20,6 +44,25 @@ export const getAudio = async (req: any, res: any) => {
 
     res.setHeader('Content-Type', 'audio/mpeg');
     res.send(data.signedUrl);
+}
+
+const generateAndSaveAudio = async (text: string, id: number): Promise<number> => {
+    const audio = await generateSpeech(text);
+    const audioBuffer = Buffer.from(audio);
+    await saveAudio(audioBuffer, id);
+
+    const { error } = await supabaseTempClient!
+        .from('phrases')
+        .update({
+            audio_url: `${id}.mp3`
+        })
+        .eq('id', id);
+
+    if (error) {
+        throw error.message;
+    }
+
+    return id
 }
 
 const generateSpeech = async (text: string): Promise<ArrayBuffer> => {
@@ -47,14 +90,13 @@ const generateSpeech = async (text: string): Promise<ArrayBuffer> => {
     }
 }
 
-const saveAudio = async (audio: Buffer, id: number, token: string) => {
+const saveAudio = async (audio: Buffer, id: number) => {
     const bucket = process.env.SUPABASE_BUCKET || '';
 
     try {
         const audioName = `${id}.mp3`;
 
-        const supabase = createSBClient(token);
-        const { error } = await supabase.storage
+        const { error } = await supabaseTempClient!.storage
             .from(bucket)
             .upload(audioName, audio, {
                 contentType: 'audio/mp3',
@@ -73,42 +115,52 @@ const saveAudio = async (audio: Buffer, id: number, token: string) => {
 
 export const generateAudioPhrases = async (req: any, res: any) => {
     try {
-        const token = req.headers.authorization?.replace('Bearer ', '');
-        const supabase = createSBClient(token);
+        tempToken = req.headers.authorization?.replace('Bearer ', '');
+        supabaseTempClient = createSBClient(tempToken);
 
-        const { data, error } = await supabase
-            .from('phrases')
+        const { data, error } = await supabaseTempClient
+            .from('phrase_translations')
             .select(`
+            id,
+            priority,
+            original:phrases!phrase_id (
                 id,
                 text,
                 audio_url
-            `).is('audio_url', null);
+            ),
+            translated:phrases!translated_phrase_id (
+                id,
+                text,
+                audio_url
+            )
+        `)
+            .not('original', 'is', null)
+            .not('translated', 'is', null)
+            .is('original.audio_url', null)
+            .is('translated.audio_url', null)
+            .order('priority', { ascending: true }) as PhraseTranslationsResponse
 
         const savedAudios = []
 
-        for await (const phrase of data!) {
-            const audio = await generateSpeech(phrase.text);
-            const audioBuffer = Buffer.from(audio);
-            await saveAudio(audioBuffer, phrase.id, token);
+        if (data) {
+            for await (const phrase of data) {
+                const { original, translated } = phrase;
 
-            const { error } = await supabase
-                .from('phrases')
-                .update({
-                    audio_url: `${phrase.id}.mp3`
-                })
-                .eq('id', phrase.id);
+                const [originalAudioId, translatedAudioId] = await Promise.all([
+                    generateAndSaveAudio(original.text, original.id),
+                    generateAndSaveAudio(translated.text, translated.id),
+                ])
 
-            savedAudios.push(phrase.id);
-
-            if (error) {
-                throw error.message;
+                savedAudios.push(originalAudioId, translatedAudioId);
             }
-
         }
 
         if (error) {
             throw error.message;
         }
+
+        supabaseTempClient = null;
+        tempToken = '';
         return res.status(200).send(savedAudios);
     } catch (error) {
         return res.status(500).json({ error: error });

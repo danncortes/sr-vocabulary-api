@@ -1,6 +1,10 @@
+import path from "path";
+import fs from "fs";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../superbaseClient.js";
 import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
+
+let supabaseClientTemp: SupabaseClient<any, string, any> | null
 
 export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     try {
@@ -175,4 +179,154 @@ export const delayManyVocabulary = async (req: any, res: any): Promise<any> => {
     } catch (error) {
         return res.status(500).json({ error: error });
     }
+}
+
+export const loadTranslatedVocabulary = async (req: any, res: any) => {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    supabaseClientTemp = createSBClient(token);
+
+    try {
+        const phrases = getTranslatedVocabulary('/Users/danncortes/danncortes vault/Deutsche Texte/NEW.md');
+
+        await processTranslatedPhrases(phrases);
+
+        res.status(200).send(phrases);
+        supabaseClientTemp = null;
+    } catch (error: any) {
+        res.status(400).send({ error: error.message });
+    }
+}
+
+const getTranslatedVocabulary = (filePath: string): string[][] => {
+    const fileContent = getFileContent(filePath);
+    if (!fileContent) {
+        throw new Error('File is empty or not found');
+    }
+
+    let [translatedVocabularyBlock] = fileContent.split('-----');
+    const lines = translatedVocabularyBlock.split('-')
+        .map(line => line.trim())
+        .map(line => line.split('\n'))
+        .filter(line => {
+            return line.length > 1
+        });
+
+    return lines
+}
+
+const processTranslatedPhrases = async (phrases: string[][]): Promise<void> => {
+    let processedPhrasesIndex = 0;
+    try {
+        for await (const [originalPhrase, translatedPhrase] of phrases) {
+
+            console.log("🚀 Processing...", originalPhrase);
+            let [original, priority] = originalPhrase.split('#');
+            priority = priority || '3'
+            const [phraseId, translatedPhraseId] = await Promise.all([
+                savePhrase(original, 3),
+                savePhrase(translatedPhrase, 4)
+            ])
+            await saveVocabulary(phraseId, translatedPhraseId, Number(priority));
+            console.log("🚀 Saved...", `Original: ${originalPhrase}`, `Translated: ${translatedPhrase}`, `Priority: ${priority}`);
+            processedPhrasesIndex++;
+        }
+        // Todo - Update the file to remove the processed phrases
+    }
+    catch (error) {
+        console.error("Error processing phrases:", error);
+
+        if (processedPhrasesIndex < phrases.length - 1) {
+            // Todo - Update the file to remove the processed phrases
+        }
+
+        throw error;
+    }
+
+}
+
+export const loadRawVocabulary = async (req: any, res: any) => {
+    try {
+
+        const phrases = getRawVocabulary('/Users/danncortes/danncortes vault/Deutsche Texte/NEW.md');
+
+        await processPhrases(phrases);
+
+        res.status(200).send(phrases);
+    } catch (error: any) {
+        console.log("🚀 ~ loadNewVocabulary ~ error:", error);
+        res.status(400).send({ error: error.message });
+    }
+}
+
+const getFileContent = (filePath: string) => {
+    return fs.readFileSync(path.join(filePath), 'utf-8');
+}
+
+const getRawVocabulary = (filePath: string): [string, number][] => {
+    const fileContent = getFileContent(filePath);
+    if (!fileContent) {
+        throw new Error('File is empty or not found');
+    }
+
+    //Todo - Update
+    const lines: [string, number][] = fileContent.split('\n').map(line => {
+        line.trim();
+        let [phrase, priority] = line.split('#');
+        priority = priority || '3';
+        return [phrase, Number(priority)] as [string, number];
+    }).filter(line => {
+        const [phrase, priority] = line;
+        return phrase.length > 0;
+    });
+
+    return lines
+}
+
+const processPhrases = async (phrases: [string, number][]): Promise<void> => {
+    try {
+        for await (const [originalPhrase, priority] of phrases) {
+            console.log("🚀 Processing...", originalPhrase);
+        }
+    }
+    catch (error) {
+        console.error("Error processing phrases:", error);
+        throw error;
+    }
+}
+
+const translatePhrase = async (phrase: string, langFrom: string, langTo: string): Promise<void> => {
+
+}
+
+const savePhrase = async (text: string, langId: number): Promise<number> => {
+    const { data, error } = await supabaseClientTemp!
+        .from('phrases')
+        .insert({ text, language_id: langId })
+        .select('id');
+
+    if (error) {
+        throw error;
+    }
+
+    console.log("🚀 ~ savePhrase ~ data:", data)
+    return data[0].id;
+}
+
+const saveVocabulary = async (phraseIdFrom: number, phraseIdTo: number, priority: number): Promise<number> => {
+    const { data, error } = await supabaseClientTemp!
+        .from('phrase_translations')
+        .insert({
+            phrase_id: phraseIdFrom,
+            translated_phrase_id: phraseIdTo,
+            priority,
+            modified_at: null,
+            review_date: null
+        })
+        .select('id');
+
+    if (error) {
+        throw error;
+    }
+
+    return data[0].id;
 }
