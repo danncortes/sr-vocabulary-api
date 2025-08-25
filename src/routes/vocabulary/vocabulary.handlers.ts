@@ -181,6 +181,76 @@ export const delayManyVocabulary = async (req: any, res: any): Promise<any> => {
     }
 }
 
+export const resetManyVocabulary = async (req: any, res: any): Promise<any> => {
+    try {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        const supabase = createSBClient(token);
+        const { ids } = req.body;
+
+        const newVocabulary = [];
+
+        for await (const id of ids) {
+            let { data } = await resetVocabulary(id, supabase);
+            newVocabulary.push(data);
+        }
+
+        return res.status(200).send(newVocabulary);
+    } catch (error) {
+        return res.status(500).json({ error: error });
+    }
+}
+
+export const resetVocabulary = async (id: number, supabase: SupabaseClient<any, string, any>): Promise<any> => {
+    const { data, error } = await supabase
+        .from('phrase_translations')
+        .update({
+            sr_stage_id: 0,
+            review_date: null,
+            learned: 0
+        })
+        .eq('id', id).select();
+
+    if (error) {
+        return { error: error.message };
+    }
+    return { data: data[0] }
+}
+
+export const restartManyVocabulary = async (req: any, res: any): Promise<any> => {
+    try {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        const supabase = createSBClient(token);
+        const { ids } = req.body;
+
+        const newVocabulary = [];
+
+        for await (const id of ids) {
+            let { data } = await restartVocabulary(id, supabase);
+            newVocabulary.push(data);
+        }
+
+        return res.status(200).send(newVocabulary);
+    } catch (error) {
+        return res.status(500).json({ error: error });
+    }
+}
+
+export const restartVocabulary = async (id: number, supabase: SupabaseClient<any, string, any>): Promise<any> => {
+    const { data, error } = await supabase
+        .from('phrase_translations')
+        .update({
+            sr_stage_id: 1,
+            review_date: getNextDateByDay('Wednesday'),
+            learned: 0
+        })
+        .eq('id', id).select();
+
+    if (error) {
+        return { error: error.message };
+    }
+    return { data: data[0] }
+}
+
 export const loadTranslatedVocabulary = async (req: any, res: any) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     supabaseClientTemp = createSBClient(token);
