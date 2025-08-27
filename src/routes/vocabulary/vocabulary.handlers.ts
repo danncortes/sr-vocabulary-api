@@ -1,5 +1,5 @@
 import path from "path";
-import fs from "fs";
+import fs, { writeFileSync } from "fs";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../superbaseClient.js";
 import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
@@ -254,17 +254,37 @@ export const restartVocabulary = async (id: number, supabase: SupabaseClient<any
 export const loadTranslatedVocabulary = async (req: any, res: any) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     supabaseClientTemp = createSBClient(token);
+    let processedPhrasesIndex = 0;
 
     try {
         const phrases = getTranslatedVocabulary('/Users/danncortes/danncortes vault/Deutsche Texte/NEW.md');
 
-        await processTranslatedPhrases(phrases);
+        processedPhrasesIndex = await processTranslatedPhrases(phrases);
 
         res.status(200).send(phrases);
-        supabaseClientTemp = null;
     } catch (error: any) {
+        if (error.processedPhrasesIndex) {
+            processedPhrasesIndex = error.processedPhrasesIndex;
+        }
         res.status(400).send({ error: error.message });
+    } finally {
+        if (processedPhrasesIndex > 0) {
+            updateTranslatedVocabularyFile('/Users/danncortes/danncortes vault/Deutsche Texte/NEW.md', processedPhrasesIndex);
+        }
+        supabaseClientTemp = null;
     }
+}
+
+const updateTranslatedVocabularyFile = (filePath: string, linesToRemove: number) => {
+    const fileContent = getFileContent(filePath);
+    if (!fileContent) {
+        throw new Error('File is empty or not found');
+    }
+
+    const lines = fileContent.split('\n');
+    lines.splice(0, linesToRemove);
+    const newContent = lines.join('\n');
+    writeFileSync(filePath, newContent);
 }
 
 const getTranslatedVocabulary = (filePath: string): string[][] => {
@@ -275,31 +295,32 @@ const getTranslatedVocabulary = (filePath: string): string[][] => {
 
     let [translatedVocabularyBlock] = fileContent.split('-----');
     const lines = translatedVocabularyBlock.split('-')
-        .map(line => line.trim())
         .map(line => line.split('\n'))
-        .filter(line => {
-            return line.length > 1
-        });
+        .map(line => line.filter(l => l.trim().length > 0))
+        .map(line => line.map((l) => l.trim()))
+        .filter(line => line.length > 0);
 
     return lines
 }
 
-const processTranslatedPhrases = async (phrases: string[][]): Promise<void> => {
+const processTranslatedPhrases = async (phrases: string[][]): Promise<number> => {
     let processedPhrasesIndex = 0;
     try {
-        for await (const [originalPhrase, translatedPhrase] of phrases) {
+        for await (const [translatedPhrase, originalPhrase] of phrases) {
 
-            console.log("🚀 Processing...", originalPhrase);
-            let [original, priority] = originalPhrase.split('#');
+            console.log("🚀 Processing...", translatedPhrase);
+            let [translated, priority] = translatedPhrase.split('#');
             priority = priority || '3'
             const [phraseId, translatedPhraseId] = await Promise.all([
-                savePhrase(original, 3),
-                savePhrase(translatedPhrase, 4)
+                savePhrase(originalPhrase, 3),
+                savePhrase(translated, 4)
             ])
             await saveVocabulary(phraseId, translatedPhraseId, Number(priority));
             console.log("🚀 Saved...", `Original: ${originalPhrase}`, `Translated: ${translatedPhrase}`, `Priority: ${priority}`);
-            processedPhrasesIndex++;
+            processedPhrasesIndex += 2;
         }
+
+        return processedPhrasesIndex;
         // Todo - Update the file to remove the processed phrases
     }
     catch (error) {
@@ -309,9 +330,8 @@ const processTranslatedPhrases = async (phrases: string[][]): Promise<void> => {
             // Todo - Update the file to remove the processed phrases
         }
 
-        throw error;
+        throw { error: error, processedPhrasesIndex };
     }
-
 }
 
 export const loadRawVocabulary = async (req: any, res: any) => {
