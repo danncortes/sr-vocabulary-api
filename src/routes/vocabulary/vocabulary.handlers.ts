@@ -8,7 +8,13 @@ let supabaseClientTemp: SupabaseClient<any, string, any> | null
 
 export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     try {
-        const token = req.headers.authorization?.replace('Bearer ', '');
+        const { authorization } = req.headers
+        const token: string = (authorization && authorization.startsWith('Bearer ')) ? authorization.replace('Bearer ', '') : '';
+
+        if (!token) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
         const supabase = createSBClient(token);
 
         const { data, error } = await supabase
@@ -336,11 +342,8 @@ const processTranslatedPhrases = async (phrases: string[][]): Promise<number> =>
 
 export const loadRawVocabulary = async (req: any, res: any) => {
     try {
-
         const phrases = getRawVocabulary('/Users/danncortes/danncortes vault/Deutsche Texte/NEW.md');
-
         await processPhrases(phrases);
-
         res.status(200).send(phrases);
     } catch (error: any) {
         console.log("🚀 ~ loadNewVocabulary ~ error:", error);
