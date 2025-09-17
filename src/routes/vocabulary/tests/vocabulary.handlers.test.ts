@@ -13,8 +13,8 @@ jest.unstable_mockModule('../../../superbaseClient.js', () => ({
   createSBClient: mockCreateSBClient
 }));
 
-// Import the handler after mocking
-const { getAllVocabulary } = await import('../vocabulary.handlers.js');
+// Import the handlers after mocking
+const { getAllVocabulary, getVocabulary } = await import('../vocabulary.handlers.js');
 
 describe('getAllVocabulary Handler', () => {
   let mockSupabase: any;
@@ -143,5 +143,62 @@ describe('getAllVocabulary Handler', () => {
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
     });
+  });
+});
+
+describe('getVocabulary Function', () => {
+  let mockSupabase: any;
+
+  beforeEach(() => {
+    // Reset all mocks before each test
+    jest.clearAllMocks();
+
+    // Setup mock Supabase client
+    mockSupabase = {
+      from: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis()
+    };
+
+    mockCreateSBClient.mockReturnValue(mockSupabase);
+  });
+
+  it('should create Supabase client with provided token', () => {
+    // Arrange
+    const id = 123;
+    const token = 'test-token';
+
+    // Act
+    getVocabulary(id, token);
+
+    // Assert
+    expect(mockCreateSBClient).toHaveBeenCalledWith(token);
+  });
+
+  it('should query phrase_translations table with correct parameters', () => {
+    // Arrange
+    const id = 456;
+    const token = 'test-token';
+
+    // Act
+    getVocabulary(id, token);
+
+    // Assert
+    expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
+    expect(mockSupabase.select).toHaveBeenCalledWith('*');
+    expect(mockSupabase.eq).toHaveBeenCalledWith('id', id);
+  });
+
+  it('should return the Supabase query builder chain', () => {
+    // Arrange
+    const id = 789;
+    const token = 'test-token';
+    const expectedResult = mockSupabase;
+
+    // Act
+    const result = getVocabulary(id, token);
+
+    // Assert
+    expect(result).toBe(expectedResult);
   });
 });

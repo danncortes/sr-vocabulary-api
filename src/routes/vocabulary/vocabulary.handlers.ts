@@ -56,7 +56,7 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     }
 }
 
-const getVocabulary = (id: number, token: string) => {
+export const getVocabulary = (id: number, token: string) => {
     const supabase = createSBClient(token);
     return supabase
         .from('phrase_translations')
