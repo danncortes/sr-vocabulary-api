@@ -1,14 +1,24 @@
-import express from 'express';
-import { setVocabularyReviewed, getAllVocabulary, delayManyVocabulary, loadRawVocabulary, loadTranslatedVocabulary, resetManyVocabulary, restartManyVocabulary } from './vocabulary.handlers.js';
+import { Router } from 'express';
+import { authenticateToken } from '../../middleware/auth.js';
+import {
+    getAllVocabulary,
+    setVocabularyReviewed,
+    delayManyVocabulary,
+    resetManyVocabulary,
+    restartManyVocabulary,
+    loadTranslatedVocabulary,
+    loadRawVocabulary
+} from './vocabulary.handlers.js';
 
-const router = express.Router();
+const router = Router();
 
-router.get('', getAllVocabulary);
-router.post('/review', setVocabularyReviewed);
-router.post('/delay', delayManyVocabulary);
-router.post('/reset', resetManyVocabulary);
-router.post('/restart', restartManyVocabulary);
-router.get('/load-translated', loadTranslatedVocabulary);
-router.get('/load-raw', loadRawVocabulary);
+// Apply authentication middleware to all routes that need it
+router.get('/', authenticateToken, getAllVocabulary);
+router.post('/reviewed', authenticateToken, setVocabularyReviewed);
+router.post('/delay', authenticateToken, delayManyVocabulary);
+router.post('/reset', authenticateToken, resetManyVocabulary);
+router.post('/restart', authenticateToken, restartManyVocabulary);
+router.get('/load-translated', authenticateToken, loadTranslatedVocabulary);
+router.get('/load-raw', authenticateToken, loadRawVocabulary);
 
 export default router;

@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { createSBClient } from "../../superbaseClient.js";
+import { createSBClient } from "../../supabaseClient.js";
 import { ElevenLabsClient } from 'elevenlabs';
 const { EVENLABS_API_KEY } = process.env;
 

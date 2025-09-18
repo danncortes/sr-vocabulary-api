@@ -1,4 +1,4 @@
-import { createSBClient } from '../../superbaseClient.js';
+import { createSBClient } from '../../supabaseClient.js';
 
 export const getLanguages = async (req: any, res: any) => {
     const token = req.headers.authorization?.replace('Bearer ', '');

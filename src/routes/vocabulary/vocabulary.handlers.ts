@@ -1,20 +1,14 @@
 import path from "path";
 import fs, { writeFileSync } from "fs";
 import { SupabaseClient } from "@supabase/supabase-js";
-import { createSBClient } from "../../superbaseClient.js";
+import { createSBClient } from "../../supabaseClient.js";
 import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
 
 let supabaseClientTemp: SupabaseClient<any, string, any> | null
 
 export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     try {
-        const { authorization } = req.headers
-        const token: string = (authorization && authorization.startsWith('Bearer ')) ? authorization.replace('Bearer ', '') : '';
-
-        if (!token) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
-
+        const token = req.token;
         const supabase = createSBClient(token);
 
         const { data, error } = await supabase
@@ -66,7 +60,7 @@ export const getVocabulary = (id: number, token: string) => {
 
 export const setVocabularyReviewed = async (req: any, res: any): Promise<any> => {
     try {
-        const token = req.headers.authorization?.replace('Bearer ', '');
+        const token = req.token; // From middleware
         const supabase = createSBClient(token);
 
         const { id } = req.body;

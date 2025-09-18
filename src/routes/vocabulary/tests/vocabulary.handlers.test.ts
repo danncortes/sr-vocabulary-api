@@ -8,8 +8,8 @@ import {
 // Create mock function that will be used in the module mock
 const mockCreateSBClient = jest.fn();
 
-// Mock the superbaseClient module using unstable_mockModule
-jest.unstable_mockModule('../../../superbaseClient.js', () => ({
+// Mock the supabaseClient module using unstable_mockModule
+jest.unstable_mockModule('../../../supabaseClient.js', () => ({
   createSBClient: mockCreateSBClient
 }));
 
@@ -27,9 +27,7 @@ describe('getAllVocabulary Handler', () => {
 
     // Setup mock request and response
     req = {
-      headers: {
-        authorization: 'Bearer mock-jwt-token'
-      }
+      token: 'mock-jwt-token' // Token is now provided by middleware
     };
     res = {
       status: jest.fn().mockReturnThis(),
@@ -102,46 +100,6 @@ describe('getAllVocabulary Handler', () => {
       expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({ error: 'Database connection failed' });
-    });
-  });
-
-  describe('error handling', () => {
-    it('should handle missing authorization header', async () => {
-      // Arrange
-      req.headers = {}; // No authorization header
-
-      // Act
-      await getAllVocabulary(req, res);
-
-      // Assert
-      expect(mockCreateSBClient).toHaveBeenCalledTimes(0);
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
-    });
-
-    it('should handle malformed authorization header', async () => {
-      // Arrange
-      req.headers.authorization = 'InvalidFormat';
-      // Act
-      await getAllVocabulary(req, res);
-
-      // Assert
-      expect(mockCreateSBClient).toHaveBeenCalledTimes(0);
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
-    });
-
-    it('should handle authorization header without Bearer prefix', async () => {
-      // Arrange
-      req.headers.authorization = 'just-a-token';
-
-      // Act
-      await getAllVocabulary(req, res);
-
-      // Assert
-      expect(mockCreateSBClient).toHaveBeenCalledTimes(0);
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
     });
   });
 });
