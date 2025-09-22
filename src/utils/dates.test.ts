@@ -1,51 +1,7 @@
 import { jest, describe, it, expect } from '@jest/globals';
-import { getTodaysDay, addDaysToDate } from './dates.js';
+import { addDaysToDate } from './dates.js';
 
-describe('getTodaysDay', () => {
-    it('should return the correct day for each day of the week', () => {
-        const originalDate = global.Date;
-
-        // Test all days of the week (Sunday = 0, Monday = 1, etc.)
-        const weekDays = [
-            'Sunday',
-            'Monday',
-            'Tuesday',
-            'Wednesday',
-            'Thursday',
-            'Friday',
-            'Saturday'
-        ];
-
-        for (let i = 0; i < 7; i++) {
-            const mockDate = new Date(2023, 0, i + 1);
-            global.Date = class extends Date {
-                constructor() {
-                    super();
-                    return mockDate;
-                }
-            } as DateConstructor;
-            expect(getTodaysDay()).toBe(weekDays[mockDate.getDay()]);
-        }
-
-        // Restore the original Date constructor
-        global.Date = originalDate;
-    });
-
-    it('should return a valid day of the week', () => {
-        const validDays = [
-            'Sunday',
-            'Monday',
-            'Tuesday',
-            'Wednesday',
-            'Thursday',
-            'Friday',
-            'Saturday'
-        ];
-
-        // Test that getTodaysDay returns one of the valid days
-        expect(validDays).toContain(getTodaysDay());
-    });
-
+describe('addDaysToDate', () => {
     it('should add days to a valid date', () => {
         // Test adding positive days
         expect(addDaysToDate('2023-01-01', 5)).toBe('2023-01-06');

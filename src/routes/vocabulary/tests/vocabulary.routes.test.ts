@@ -97,7 +97,7 @@ describe('Vocabulary Routes', () => {
 
         it('should call setVocabularyReviewed handler for POST /reviewed with valid token', async () => {
             await request(app)
-                .post('/vocabulary/reviewed')
+                .post('/vocabulary/review')
                 .set('Authorization', validToken)
                 .send({})
                 .expect(200);
@@ -167,7 +167,7 @@ describe('Vocabulary Routes', () => {
             // Test that middleware is called for each route
             const routes = [
                 { method: 'get', path: '/vocabulary' },
-                { method: 'post', path: '/vocabulary/reviewed' },
+                { method: 'post', path: '/vocabulary/review' },
                 { method: 'post', path: '/vocabulary/delay' },
                 { method: 'post', path: '/vocabulary/reset' },
                 { method: 'post', path: '/vocabulary/restart' },
@@ -211,7 +211,7 @@ describe('Vocabulary Routes', () => {
             });
 
             await request(app)
-                .post('/vocabulary/reviewed')
+                .post('/vocabulary/review')
                 .send({})
                 .expect(401);
 
@@ -224,7 +224,7 @@ describe('Vocabulary Routes', () => {
         it('should have all handlers called exactly once when all routes are hit with authentication', async () => {
             // Hit all routes with proper authentication
             await request(app).get('/vocabulary').set('Authorization', validToken);
-            await request(app).post('/vocabulary/reviewed').set('Authorization', validToken).send({});
+            await request(app).post('/vocabulary/review').set('Authorization', validToken).send({});
             await request(app).post('/vocabulary/delay').set('Authorization', validToken).send({});
             await request(app).post('/vocabulary/reset').set('Authorization', validToken).send({});
             await request(app).post('/vocabulary/restart').set('Authorization', validToken).send({});

@@ -14,7 +14,7 @@ const router = Router();
 
 // Apply authentication middleware to all routes that need it
 router.get('/', authenticateToken, getAllVocabulary);
-router.post('/reviewed', authenticateToken, setVocabularyReviewed);
+router.post('/review', authenticateToken, setVocabularyReviewed);
 router.post('/delay', authenticateToken, delayManyVocabulary);
 router.post('/reset', authenticateToken, resetManyVocabulary);
 router.post('/restart', authenticateToken, restartManyVocabulary);

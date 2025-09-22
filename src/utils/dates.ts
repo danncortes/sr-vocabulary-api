@@ -1,26 +1,7 @@
-export type Days = [
-    'Sunday',
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday'
-];
-
-export function getTodaysDay(): string {
+export function getTodaysDay(): number {
     const today = new Date();
     const dayOfWeek = today.getDay();
-    const weekDays: Days = [
-        'Sunday',
-        'Monday',
-        'Tuesday',
-        'Wednesday',
-        'Thursday',
-        'Friday',
-        'Saturday'
-    ];
-    return weekDays[dayOfWeek];
+    return dayOfWeek;
 }
 
 
@@ -38,21 +19,10 @@ export function addDaysToDate(date: string, days: number): string {
     return `${year}-${month}-${day}`;
 }
 
-export function getNextDateByDay(targetDay: string): string {
+export function getNextDateByDay(targetDay: number): string {
     const today = new Date();
-    const weekDays: { [key: string]: number } = {
-        Sunday: 0,
-        Monday: 1,
-        Tuesday: 2,
-        Wednesday: 3,
-        Thursday: 4,
-        Friday: 5,
-        Saturday: 6
-    };
-
-    const targetDayIndex = weekDays[targetDay];
     const currentDayIndex = today.getDay();
-    const daysUntilTarget = (targetDayIndex - currentDayIndex + 7) % 7;
+    const daysUntilTarget = (targetDay - currentDayIndex + 7) % 7;
 
     const nextTargetDate = new Date(today);
     nextTargetDate.setDate(today.getDate() + daysUntilTarget);

@@ -3,6 +3,10 @@ import fs, { writeFileSync } from "fs";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../supabaseClient.js";
 import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
+import { getVocabularyById } from '../../services/vocabulary.service.js';
+import { getStageById } from '../../services/stages.service.js';
+import { getUserReviewDays } from "../../services/review-days.service.js";
+import { getUserLearnDays } from "../../services/learn-days.service.js";
 
 let supabaseClientTemp: SupabaseClient<any, string, any> | null
 
@@ -50,80 +54,77 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     }
 }
 
-export const getVocabulary = (id: number, token: string) => {
-    const supabase = createSBClient(token);
-    return supabase
-        .from('phrase_translations')
-        .select('*')
-        .eq('id', id);
-}
-
 export const setVocabularyReviewed = async (req: any, res: any): Promise<any> => {
     try {
-        const token = req.token; // From middleware
+        const { id } = req.body;
+        const { token } = req;
         const supabase = createSBClient(token);
 
-        const { id } = req.body;
+        // Now with built-in error handling
+        const vocabulary = await getVocabularyById(id, token);
 
-        const vocabulary = await getVocabulary(id, token);
-
-        if (vocabulary.error) {
-            return res.status(500).json({ error: vocabulary.error.message });
-        }
-
-        const { review_date, sr_stage_id, learned: isLearned } = vocabulary.data[0];
+        const { review_date, sr_stage_id, learned: isLearned } = vocabulary;
 
         const newStageId = sr_stage_id + 1;
-        const learned = newStageId === 6 ? 1 : isLearned
-        const stages = await supabase
-            .from('stages')
-            .select('*')
-            .eq('id', newStageId);
+        const learned = newStageId === 6 ? 1 : isLearned;
 
-        if (stages.error) {
-            return res.status(500).json({ error: stages.error.message });
-        }
+        // Use the new stages service function with built-in error handling
+        const stage = await getStageById(newStageId, token);
+        const { days: daysToAdd } = stage;
 
-        const { days } = stages.data[0];
-
-        let newReviewDate: string | null = addDaysToDate(review_date, days);
+        /* Normal behavior
+        If New Stage is 1 and today is a learn day
+        or Stage is > 1 and < 6 and today is a review day
+        */
+        let newReviewDate: string | null = addDaysToDate(review_date, daysToAdd);
         const todaysDay = getTodaysDay();
+        const reviewDays = await getUserReviewDays(token);
+        const learnDays = await getUserLearnDays(token);
 
-        // TODO - Review and learn days should come from the DB user settings.
+        if (reviewDays.length && learnDays.length) {
+            const isTodayLearnDay = learnDays.includes(todaysDay);
+            const isTodayReviewDay = reviewDays.includes(todaysDay);
 
-        if (newStageId === 1 && !['Monday', 'Tuesday'].includes(todaysDay)) {
-            const nextLearnDay = getNextDateByDay('Tuesday');
-            newReviewDate = addDaysToDate(nextLearnDay, days);
-        } else if (newStageId > 1 && newStageId < 6) {
-            if (isDateLessThanToday(review_date)) {
-                if (['Wednesday', 'Thursday'].includes(todaysDay)) {
-                    newReviewDate = addDaysToDate('', days);
-                } else {
-                    const nextReviewDate = getNextDateByDay('Wednesday');
-                    newReviewDate = addDaysToDate(nextReviewDate, days);
+            if (newStageId === 1 && !isTodayLearnDay) {
+                const highestLearnDay = Math.max(...learnDays);
+                const nextLearnDay = getNextDateByDay(highestLearnDay);
+                newReviewDate = addDaysToDate(nextLearnDay, daysToAdd);
+            } else if (newStageId > 1 && newStageId < 6) {
+                // The review day passed
+                if (isDateLessThanToday(review_date)) {
+                    if (isTodayReviewDay) {
+                        newReviewDate = addDaysToDate('', daysToAdd);
+                    } else {
+                        const lowestReviewDay = Math.min(...reviewDays);
+                        const nextReviewDate = getNextDateByDay(lowestReviewDay);
+                        newReviewDate = addDaysToDate(nextReviewDate, daysToAdd);
+                    }
                 }
+            } else if (newStageId === 6) {
+                newReviewDate = null
             }
-        } else if (newStageId === 6) {
-            newReviewDate = null
+
+            const { data, error } = await supabase
+                .from('phrase_translations')
+                .update({
+                    sr_stage_id: newStageId,
+                    review_date: newReviewDate,
+                    learned: learned
+                })
+                .eq('id', id).select();
+
+            if (error) {
+                return res.status(500).json({ error: error.message });
+            }
+
+            return res.status(200).send(data[0]);
+        } else {
+            return res.status(400).json({ error: reviewDays.length === 0 ? 'There are no Review Days' : 'There are no Learn Days' });
         }
 
-        const { data, error } = await supabase
-            .from('phrase_translations')
-            .update({
-                sr_stage_id: newStageId,
-                review_date: newReviewDate,
-                learned: learned
-            })
-            .eq('id', id).select();
-
-        if (error) {
-            return res.status(500).json({ error: error.message });
-        }
-
-        return res.status(200).send(data[0]);
 
     } catch (error) {
-        return res.status(500).json({ error: error });
+        return res.status(500).json({ error: (error as Error).message });
     }
 }
 
@@ -236,11 +237,15 @@ export const restartManyVocabulary = async (req: any, res: any): Promise<any> =>
 }
 
 export const restartVocabulary = async (id: number, supabase: SupabaseClient<any, string, any>): Promise<any> => {
+
+    // TODO - Replace 3 with the lowest review day from the user settings.
+    const lowestReviewDay = 3;
+
     const { data, error } = await supabase
         .from('phrase_translations')
         .update({
             sr_stage_id: 1,
-            review_date: getNextDateByDay('Wednesday'),
+            review_date: getNextDateByDay(lowestReviewDay),
             learned: 0
         })
         .eq('id', id).select();
