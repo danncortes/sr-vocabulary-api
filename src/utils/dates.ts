@@ -4,12 +4,13 @@ export function getTodaysDay(): number {
     return dayOfWeek;
 }
 
+export function addDaysToDate(date: string | null, days: number): string {
+    let dateObj = new Date();
 
-export function addDaysToDate(date: string, days: number): string {
-    let dateObj = new Date(date);
-    if ([null, "NULL", ""].includes(date)) {
-        dateObj = new Date();
+    if (!["NULL", "", null].includes(date)) {
+        dateObj = new Date(date!);
     }
+
     dateObj.setDate(dateObj.getDate() + days);
 
     const year = dateObj.getFullYear();
