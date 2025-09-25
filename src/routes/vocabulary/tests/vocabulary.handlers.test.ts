@@ -3,6 +3,9 @@ import {
     mockVocabularyData,
     mockSupabaseResponse,
     mockSupabaseError,
+    mockedStages,
+    learnDays,
+    reviewDays,
 } from '../../../__mocks__/vocabulary.mock.js';
 
 // Create mock function that will be used in the module mock
@@ -135,19 +138,6 @@ describe('getAllVocabulary Handler', () => {
 });
 
 describe('setVocabularyReviewed', () => {
-    const mockedStages = [
-        { id: 0, days: 0 },
-        { id: 1, days: 2 },
-        { id: 2, days: 7 },
-        { id: 3, days: 14 },
-        { id: 4, days: 28 },
-        { id: 5, days: 56 },
-        { id: 6, days: 0 },
-    ];
-
-    const learnDays = [1, 2];
-    const reviewDays = [3, 4];
-
     let mockSupabase: any;
     let req: any;
     let res: any;
@@ -590,4 +580,213 @@ describe('setVocabularyReviewed', () => {
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.send).toHaveBeenCalledWith(expectedPhraseTranslation);
     });
-});
+
+    it('should handle database errors when request fails', async () => {
+        const phraseTranslation = {
+            id: 1,
+            sr_stage_id: 0,
+            review_date: null,
+            priority: 1,
+            learned: 0,
+        };
+
+        // Mock service calls
+        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
+        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
+        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
+        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
+        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
+        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
+
+        // Mock Supabase database error
+        mockSupabase.select.mockResolvedValue({
+            data: null,
+            error: { message: 'Database connection failed' }
+        });
+
+        await setVocabularyReviewed(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Database connection failed' });
+    });
+
+    it('should handle errors when there are no review or learn days from database', async () => {
+        const phraseTranslation = {
+            id: 1,
+            sr_stage_id: 0,
+            review_date: null,
+            priority: 1,
+            learned: 0,
+        };
+
+        // Mock service calls
+        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
+        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
+        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
+        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue([]); // No review days
+        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
+        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
+
+        await setVocabularyReviewed(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({ error: 'There are no Review Days' });
+    });
+
+    it('should handle errors when there are no learn days from database', async () => {
+        const phraseTranslation = {
+            id: 1,
+            sr_stage_id: 0,
+            review_date: null,
+            priority: 1,
+            learned: 0,
+        };
+
+        // Mock service calls
+        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
+        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
+        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
+        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
+        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue([]); // No learn days
+        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
+
+        await setVocabularyReviewed(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({ error: 'There are no Learn Days' });
+    });
+
+    it('should handle errors when getVocabularyById service fails', async () => {
+        // Mock service failure
+        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockRejectedValue(new Error('Vocabulary not found'));
+
+        await setVocabularyReviewed(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Vocabulary not found' });
+    });
+
+    it('should handle errors when getStageById service fails', async () => {
+        const phraseTranslation = {
+            id: 1,
+            sr_stage_id: 0,
+            review_date: null,
+            priority: 1,
+            learned: 0,
+        };
+
+        // Mock service calls
+        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
+        (getStageById as jest.MockedFunction<typeof getStageById>).mockRejectedValue(new Error('Stage not found'));
+
+        await setVocabularyReviewed(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Stage not found' });
+    });
+
+    it('should handle errors when getUserReviewDays service fails', async () => {
+        const phraseTranslation = {
+            id: 1,
+            sr_stage_id: 0,
+            review_date: null,
+            priority: 1,
+            learned: 0,
+        };
+
+        // Mock service calls
+        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
+        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
+        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
+        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockRejectedValue(new Error('Failed to get review days'));
+        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
+        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
+
+        await setVocabularyReviewed(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Failed to get review days' });
+    });
+
+    it('should handle errors when getUserLearnDays service fails', async () => {
+        const phraseTranslation = {
+            id: 1,
+            sr_stage_id: 0,
+            review_date: null,
+            priority: 1,
+            learned: 0,
+        };
+
+        // Mock service calls
+        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
+        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
+        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
+        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
+        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockRejectedValue(new Error('Failed to get learn days'));
+        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
+
+        await setVocabularyReviewed(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Failed to get learn days' });
+    });
+
+    it('should handle errors when utility functions fail', async () => {
+        const phraseTranslation = {
+            id: 1,
+            sr_stage_id: 0,
+            review_date: null,
+            priority: 1,
+            learned: 0,
+        };
+
+        // Mock service calls
+        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
+        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
+        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockImplementation(() => {
+            throw new Error('Failed to get today\'s day');
+        });
+
+        await setVocabularyReviewed(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Failed to get today\'s day' });
+    });
+
+    it('should handle errors when createSBClient fails', async () => {
+        // Mock createSBClient to throw an error
+        mockCreateSBClient.mockImplementation(() => {
+            throw new Error('Failed to create Supabase client');
+        });
+
+        await setVocabularyReviewed(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Failed to create Supabase client' });
+    });
+
+    it('should handle missing request body parameters', async () => {
+        // Mock request without id
+        const reqWithoutId = {
+            body: {},
+            token: 'mock-jwt-token'
+        };
+
+        await setVocabularyReviewed(reqWithoutId, res);
+
+        // Verify error response (this would likely cause an error in getVocabularyById)
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            error: expect.any(String)
+        }));
+    })
+})

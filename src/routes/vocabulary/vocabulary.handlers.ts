@@ -128,14 +128,6 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
     }
 }
 
-const getManyVocabulary = (ids: number[], token: string) => {
-    const supabase = createSBClient(token);
-    return supabase
-        .from('phrase_translations')
-        .select('*')
-        .in('id', ids);
-}
-
 export const delayVocabulary = async (item: any, days: number, supabase: SupabaseClient<any, string, any>): Promise<any> => {
     const { review_date } = item;
     const newReviewDate = addDaysToDate(review_date, days);
@@ -150,6 +142,14 @@ export const delayVocabulary = async (item: any, days: number, supabase: Supabas
         return { error: error.message };
     }
     return { data: { ...item, review_date: newReviewDate } }
+}
+
+const getManyVocabulary = (ids: number[], token: string) => {
+    const supabase = createSBClient(token);
+    return supabase
+        .from('phrase_translations')
+        .select('*')
+        .in('id', ids);
 }
 
 export const delayManyVocabulary = async (req: any, res: any): Promise<any> => {
@@ -384,10 +384,6 @@ const processPhrases = async (phrases: [string, number][]): Promise<void> => {
         console.error("Error processing phrases:", error);
         throw error;
     }
-}
-
-const translatePhrase = async (phrase: string, langFrom: string, langTo: string): Promise<void> => {
-
 }
 
 const savePhrase = async (text: string, langId: number): Promise<number> => {

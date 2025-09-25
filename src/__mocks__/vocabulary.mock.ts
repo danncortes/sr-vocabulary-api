@@ -80,3 +80,16 @@ export const mockResponse = () => {
   res.send = jest.fn().mockReturnValue(res);
   return res;
 };
+
+export const mockedStages = [
+  { id: 0, days: 0 },
+  { id: 1, days: 2 },
+  { id: 2, days: 7 },
+  { id: 3, days: 14 },
+  { id: 4, days: 28 },
+  { id: 5, days: 56 },
+  { id: 6, days: 0 },
+];
+
+export const learnDays = [1, 2];
+export const reviewDays = [3, 4];
