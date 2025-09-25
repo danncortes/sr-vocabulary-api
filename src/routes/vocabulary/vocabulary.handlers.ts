@@ -7,12 +7,14 @@ import { getVocabularyById } from '../../services/vocabulary.service.js';
 import { getStageById } from '../../services/stages.service.js';
 import { getUserReviewDays } from "../../services/review-days.service.js";
 import { getUserLearnDays } from "../../services/learn-days.service.js";
+import { getUserFromToken } from "../../services/user.service.js";
 
 let supabaseClientTemp: SupabaseClient<any, string, any> | null
 
 export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     try {
         const token = req.token;
+        const user = await getUserFromToken(token);
         const supabase = createSBClient(token);
 
         const { data, error } = await supabase
@@ -35,6 +37,7 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
                 audio_url
             )
         `)
+            .eq('user_id', user.id)
             .not('original', 'is', null)
             .not('translated', 'is', null)
             .not('original.audio_url', 'is', null)
@@ -59,6 +62,7 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
         const { id } = req.body;
         const { token } = req;
         const supabase = createSBClient(token);
+        const user = await getUserFromToken(token);
 
         // Now with built-in error handling
         const vocabulary = await getVocabularyById(id, token);
@@ -111,6 +115,7 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
                     review_date: newReviewDate,
                     learned: learned
                 })
+                .eq('user_id', user.id)
                 .eq('id', id).select();
 
             if (error) {

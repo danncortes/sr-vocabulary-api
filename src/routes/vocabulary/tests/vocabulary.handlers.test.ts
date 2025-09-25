@@ -7,6 +7,7 @@ import {
     learnDays,
     reviewDays,
 } from '../../../__mocks__/vocabulary.mock.js';
+import { User } from '@supabase/supabase-js';
 
 // Create mock function that will be used in the module mock
 const mockCreateSBClient = jest.fn();
@@ -33,6 +34,11 @@ jest.unstable_mockModule('../../../services/learn-days.service.js', () => ({
     getUserLearnDays: jest.fn()
 }));
 
+// Mock the user service module
+jest.unstable_mockModule('../../../services/user.service.js', () => ({
+    getUserFromToken: jest.fn()
+}));
+
 // Mock the dates utility module
 jest.unstable_mockModule('../../../utils/dates.js', () => ({
     addDaysToDate: jest.fn(),
@@ -47,6 +53,7 @@ const { getVocabularyById } = await import('../../../services/vocabulary.service
 const { getStageById } = await import('../../../services/stages.service.js');
 const { getUserReviewDays } = await import('../../../services/review-days.service.js');
 const { getUserLearnDays } = await import('../../../services/learn-days.service.js');
+const { getUserFromToken } = await import('../../../services/user.service.js');
 const { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } = await import('../../../utils/dates.js');
 
 describe('getAllVocabulary Handler', () => {
@@ -72,16 +79,29 @@ describe('getAllVocabulary Handler', () => {
         mockSupabase = {
             from: jest.fn().mockReturnThis(),
             select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
             not: jest.fn().mockReturnThis(),
             order: jest.fn()
         };
 
         mockCreateSBClient.mockReturnValue(mockSupabase);
+
+        // Mock getUserFromToken to return a user object
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue({
+            id: 'user-123',
+            email: 'test@example.com'
+        } as User);
     });
 
     describe('successful requests', () => {
         it('should return vocabulary data with status 200 when request is successful', async () => {
-
+            // Setup mock chain for getAllVocabulary: 1 eq, 4 not, 3 order calls
+            mockSupabase.eq.mockReturnValueOnce(mockSupabase); // eq('user_id', user.id)
+            mockSupabase.not
+                .mockReturnValueOnce(mockSupabase) // not('original', 'is', null)
+                .mockReturnValueOnce(mockSupabase) // not('translated', 'is', null)
+                .mockReturnValueOnce(mockSupabase) // not('original.audio_url', 'is', null)
+                .mockReturnValueOnce(mockSupabase); // not('translated.audio_url', 'is', null)
             mockSupabase.order
                 .mockReturnValueOnce(mockSupabase)  // First call: order('priority')
                 .mockReturnValueOnce(mockSupabase)  // Second call: order('review_date')
@@ -91,6 +111,7 @@ describe('getAllVocabulary Handler', () => {
             await getAllVocabulary(req, res);
 
             // Assert
+            expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
             expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
             expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
             expect(mockSupabase.select).toHaveBeenCalledWith(`
@@ -111,6 +132,7 @@ describe('getAllVocabulary Handler', () => {
                 audio_url
             )
         `);
+            expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', 'user-123');
             expect(mockSupabase.not).toHaveBeenCalledTimes(4);
             expect(mockSupabase.order).toHaveBeenNthCalledWith(1, 'priority', { ascending: true });
             expect(mockSupabase.order).toHaveBeenNthCalledWith(2, 'review_date', { ascending: true });
@@ -120,19 +142,39 @@ describe('getAllVocabulary Handler', () => {
         });
 
         it('should handle database errors', async () => {
-            // Arrange
+            // Setup mock chain that fails at the end
+            mockSupabase.eq.mockReturnValueOnce(mockSupabase);
+            mockSupabase.not
+                .mockReturnValueOnce(mockSupabase)
+                .mockReturnValueOnce(mockSupabase)
+                .mockReturnValueOnce(mockSupabase)
+                .mockReturnValueOnce(mockSupabase);
             mockSupabase.order
-                .mockReturnValueOnce(mockSupabase)  // First call: order('priority')
-                .mockReturnValueOnce(mockSupabase)  // Second call: order('review_date')
+                .mockReturnValueOnce(mockSupabase)
+                .mockReturnValueOnce(mockSupabase)
                 .mockResolvedValueOnce(mockSupabaseError);
 
             // Act
             await getAllVocabulary(req, res);
 
             // Assert
+            expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
             expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
             expect(res.status).toHaveBeenCalledWith(500);
             expect(res.json).toHaveBeenCalledWith({ error: 'Database connection failed' });
+        });
+
+        it('should handle auth.getUser failing', async () => {
+            // Mock getUserFromToken to fail
+            (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
+
+            // Act
+            await getAllVocabulary(req, res);
+
+            // Assert
+            expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+            expect(res.status).toHaveBeenCalledWith(500);
+            expect(res.json).toHaveBeenCalledWith({ error: new Error('Invalid token') });
         });
     });
 });
@@ -141,6 +183,7 @@ describe('setVocabularyReviewed', () => {
     let mockSupabase: any;
     let req: any;
     let res: any;
+    let mockUser: any;
 
     beforeEach(() => {
         jest.clearAllMocks();
@@ -156,6 +199,11 @@ describe('setVocabularyReviewed', () => {
             send: jest.fn()
         };
 
+        mockUser = {
+            id: 'user-123',
+            email: 'test@example.com'
+        };
+
         mockSupabase = {
             from: jest.fn().mockReturnThis(),
             update: jest.fn().mockReturnThis(),
@@ -164,6 +212,9 @@ describe('setVocabularyReviewed', () => {
         };
 
         mockCreateSBClient.mockReturnValue(mockSupabase);
+
+        // Mock getUserFromToken to return a user object
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
     });
 
     it('should set vocabulary with stage 0 on a learn day as reviewed', async () => {
@@ -191,7 +242,8 @@ describe('setVocabularyReviewed', () => {
         (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
         (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
 
-        // Mock Supabase update
+        // Mock Supabase update chain
+        mockSupabase.eq.mockReturnValueOnce(mockSupabase); // First eq call for user_id
         mockSupabase.select.mockResolvedValue({
             data: [expectedPhraseTranslation],
             error: null
@@ -200,6 +252,7 @@ describe('setVocabularyReviewed', () => {
         await setVocabularyReviewed(req, res);
 
         // Verify service calls
+        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
         expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getStageById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getTodaysDay).toHaveBeenCalled();
@@ -210,6 +263,7 @@ describe('setVocabularyReviewed', () => {
         // Verify database update
         expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
         expect(mockSupabase.update).toHaveBeenCalledWith(expectedPhraseTranslation);
+        expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', 'user-123');
         expect(mockSupabase.eq).toHaveBeenCalledWith('id', 1);
         expect(mockSupabase.select).toHaveBeenCalled();
 
@@ -246,7 +300,8 @@ describe('setVocabularyReviewed', () => {
             .mockReturnValueOnce('2025-09-24') // First call with review_date
             .mockReturnValueOnce('2025-10-01'); // Second call with next learn day
 
-        // Mock Supabase update
+        // Mock Supabase update chain
+        mockSupabase.eq.mockReturnValueOnce(mockSupabase); // First eq call for user_id
         mockSupabase.select.mockResolvedValue({
             data: [expectedPhraseTranslation],
             error: null
@@ -255,6 +310,7 @@ describe('setVocabularyReviewed', () => {
         await setVocabularyReviewed(req, res);
 
         // Verify service calls
+        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
         expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getStageById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getTodaysDay).toHaveBeenCalled();
@@ -262,11 +318,12 @@ describe('setVocabularyReviewed', () => {
         expect(getUserLearnDays).toHaveBeenCalledWith('mock-jwt-token');
         expect(getNextDateByDay).toHaveBeenCalledWith(2); // Highest learn day
         expect(addDaysToDate).toHaveBeenCalledWith(null, 2); // First call
-        expect(addDaysToDate).toHaveBeenCalledWith('2025-09-29', 2); // Second call
+        expect(addDaysToDate).toHaveBeenCalledWith('2025-09-29', 2); // Second call with next learn day
 
         // Verify database update
         expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
         expect(mockSupabase.update).toHaveBeenCalledWith(expectedPhraseTranslation);
+        expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', 'user-123');
         expect(mockSupabase.eq).toHaveBeenCalledWith('id', 1);
         expect(mockSupabase.select).toHaveBeenCalled();
 
@@ -303,7 +360,8 @@ describe('setVocabularyReviewed', () => {
         (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-10-01');
         (isDateLessThanToday as jest.MockedFunction<typeof isDateLessThanToday>).mockReturnValue(false);
 
-        // Mock Supabase update
+        // Mock Supabase update chain
+        mockSupabase.eq.mockReturnValueOnce(mockSupabase); // First eq call for user_id
         mockSupabase.select.mockResolvedValue({
             data: [expectedPhraseTranslation],
             error: null
@@ -312,6 +370,7 @@ describe('setVocabularyReviewed', () => {
         await setVocabularyReviewed(req, res);
 
         // Verify service calls
+        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
         expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getStageById).toHaveBeenCalledWith(2, 'mock-jwt-token');
         expect(getTodaysDay).toHaveBeenCalled();
@@ -327,6 +386,7 @@ describe('setVocabularyReviewed', () => {
             review_date: '2025-10-01',
             learned: 0
         });
+        expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', 'user-123');
         expect(mockSupabase.eq).toHaveBeenCalledWith('id', 1);
         expect(mockSupabase.select).toHaveBeenCalled();
 
@@ -759,6 +819,17 @@ describe('setVocabularyReviewed', () => {
         // Verify error response
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({ error: 'Failed to get today\'s day' });
+    });
+
+    it('should handle errors when getUserFromToken fails', async () => {
+        // Mock getUserFromToken to fail
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
+
+        await setVocabularyReviewed(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Invalid token' });
     });
 
     it('should handle errors when createSBClient fails', async () => {
