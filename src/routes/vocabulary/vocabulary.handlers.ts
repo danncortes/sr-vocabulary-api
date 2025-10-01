@@ -7,7 +7,7 @@ import { getVocabularyById } from '../../services/vocabulary.service.js';
 import { getStageById } from '../../services/stages.service.js';
 import { getUserReviewDays } from "../../services/review-days.service.js";
 import { getUserLearnDays } from "../../services/learn-days.service.js";
-import { getUserFromToken } from "../../services/user.service.js";
+import { getUserFromToken, getUserSettings } from "../../services/user.service.js";
 
 let supabaseClientTemp: SupabaseClient<any, string, any> | null
 
@@ -133,34 +133,46 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
     }
 }
 
-export const delayVocabulary = async (item: any, days: number, supabase: SupabaseClient<any, string, any>): Promise<any> => {
-    const { review_date } = item;
+type DelayVocabularyProps = {
+    vocabulary: any,
+    days: number,
+    userId: string,
+    supabaseInstance: SupabaseClient<any, string, any>
+}
+
+export const delayVocabulary = async (props: DelayVocabularyProps): Promise<any> => {
+    const { vocabulary, days, userId, supabaseInstance: supabase } = props;
+    const { review_date } = vocabulary;
     const newReviewDate = addDaysToDate(review_date, days);
-    const { data, error } = await supabase
+    const { error } = await supabase
         .from('phrase_translations')
         .update({
             review_date: newReviewDate
         })
-        .eq('id', item.id);
+        .eq('user_id', userId)
+        .eq('id', vocabulary.id);
 
     if (error) {
         return { error: error.message };
     }
-    return { data: { ...item, review_date: newReviewDate } }
+    return { data: { ...vocabulary, review_date: newReviewDate } }
 }
 
-const getManyVocabulary = (ids: number[], token: string) => {
+const getManyVocabulary = async (ids: number[], token: string) => {
     const supabase = createSBClient(token);
+    const user = await getUserFromToken(token);
     return supabase
         .from('phrase_translations')
         .select('*')
-        .in('id', ids);
+        .in('id', ids)
+        .eq('user_id', user.id);
 }
 
 export const delayManyVocabulary = async (req: any, res: any): Promise<any> => {
     try {
         const token = req.headers.authorization?.replace('Bearer ', '');
         const supabase = createSBClient(token);
+        const { id: userId } = await getUserFromToken(token);
         const { ids, days } = req.body;
 
         const vocabulary = await getManyVocabulary(ids, token);
@@ -172,7 +184,7 @@ export const delayManyVocabulary = async (req: any, res: any): Promise<any> => {
         const newVocabulary = [];
 
         for await (const item of vocabulary.data) {
-            const { data, error } = await delayVocabulary(item, days, supabase);
+            const { data, error } = await delayVocabulary({ vocabulary: item, days, userId, supabaseInstance: supabase });
             newVocabulary.push(data);
 
             if (error) {
@@ -191,12 +203,13 @@ export const resetManyVocabulary = async (req: any, res: any): Promise<any> => {
     try {
         const token = req.headers.authorization?.replace('Bearer ', '');
         const supabase = createSBClient(token);
+        const { id: userId } = await getUserFromToken(token);
         const { ids } = req.body;
 
         const newVocabulary = [];
 
         for await (const id of ids) {
-            let { data } = await resetVocabulary(id, supabase);
+            let { data } = await resetVocabulary(id, userId, supabase);
             newVocabulary.push(data);
         }
 
@@ -206,7 +219,7 @@ export const resetManyVocabulary = async (req: any, res: any): Promise<any> => {
     }
 }
 
-export const resetVocabulary = async (id: number, supabase: SupabaseClient<any, string, any>): Promise<any> => {
+export const resetVocabulary = async (id: number, userId: string, supabase: SupabaseClient<any, string, any>): Promise<any> => {
     const { data, error } = await supabase
         .from('phrase_translations')
         .update({
@@ -214,7 +227,34 @@ export const resetVocabulary = async (id: number, supabase: SupabaseClient<any, 
             review_date: null,
             learned: 0
         })
+        .eq('user_id', userId)
         .eq('id', id).select();
+
+    if (error) {
+        return { error: error.message };
+    }
+    return { data: data[0] }
+}
+
+type RestartVocabularyProps = {
+    vocabularyId: number,
+    userId: string,
+    reviewDate: string,
+    supabaseInstance: SupabaseClient<any, string, any>
+}
+
+export const restartVocabulary = async (props: RestartVocabularyProps): Promise<any> => {
+    const { vocabularyId, userId, reviewDate, supabaseInstance: supabase } = props;
+
+    const { data, error } = await supabase
+        .from('phrase_translations')
+        .update({
+            sr_stage_id: 1,
+            review_date: reviewDate,
+            learned: 0
+        })
+        .eq('user_id', userId)
+        .eq('id', vocabularyId).select();
 
     if (error) {
         return { error: error.message };
@@ -226,12 +266,19 @@ export const restartManyVocabulary = async (req: any, res: any): Promise<any> =>
     try {
         const token = req.headers.authorization?.replace('Bearer ', '');
         const supabase = createSBClient(token);
-        const { ids } = req.body;
+        const { id: userId } = await getUserFromToken(token);
+        const reviewDays = await getUserReviewDays(token);
 
+        if (!reviewDays || reviewDays.length === 0) {
+            return res.status(400).json({ error: 'No review days found' });
+        }
+
+        const { ids } = req.body;
         const newVocabulary = [];
+        const reviewDate = getNextDateByDay(reviewDays[0])
 
         for await (const id of ids) {
-            let { data } = await restartVocabulary(id, supabase);
+            let { data } = await restartVocabulary({ vocabularyId: id, userId, reviewDate, supabaseInstance: supabase });
             newVocabulary.push(data);
         }
 
@@ -241,24 +288,50 @@ export const restartManyVocabulary = async (req: any, res: any): Promise<any> =>
     }
 }
 
-export const restartVocabulary = async (id: number, supabase: SupabaseClient<any, string, any>): Promise<any> => {
+const getFileContent = (filePath: string) => {
+    return fs.readFileSync(path.join(filePath), 'utf-8');
+}
 
-    // TODO - Replace 3 with the lowest review day from the user settings.
-    const lowestReviewDay = 3;
-
-    const { data, error } = await supabase
-        .from('phrase_translations')
-        .update({
-            sr_stage_id: 1,
-            review_date: getNextDateByDay(lowestReviewDay),
-            learned: 0
-        })
-        .eq('id', id).select();
+const savePhrase = async (text: string, langId: number, userId: string): Promise<number> => {
+    const { data, error } = await supabaseClientTemp!
+        .from('phrases')
+        .insert({ text, language_id: langId, user_id: userId })
+        .select('id');
 
     if (error) {
-        return { error: error.message };
+        throw error;
     }
-    return { data: data[0] }
+
+    console.log("🚀 ~ savePhrase ~ data:", data)
+    return data[0].id;
+}
+
+type SaveVocabularyParams = {
+    phraseId: number;
+    translatedPhraseId: number;
+    priority: number;
+    userId: string;
+}
+
+const saveVocabulary = async (params: SaveVocabularyParams): Promise<number> => {
+    const { phraseId, translatedPhraseId, priority, userId } = params;
+    const { data, error } = await supabaseClientTemp!
+        .from('phrase_translations')
+        .insert({
+            phrase_id: phraseId,
+            translated_phrase_id: translatedPhraseId,
+            priority: priority,
+            modified_at: null,
+            review_date: null,
+            user_id: userId
+        })
+        .select('id');
+
+    if (error) {
+        throw error;
+    }
+
+    return data[0].id;
 }
 
 export const loadTranslatedVocabulary = async (req: any, res: any) => {
@@ -269,7 +342,7 @@ export const loadTranslatedVocabulary = async (req: any, res: any) => {
     try {
         const phrases = getTranslatedVocabulary('/Users/danncortes/danncortes vault/Deutsche Texte/NEW.md');
 
-        processedPhrasesIndex = await processTranslatedPhrases(phrases);
+        processedPhrasesIndex = await processTranslatedPhrases(phrases, token);
 
         res.status(200).send(phrases);
     } catch (error: any) {
@@ -303,6 +376,17 @@ const getTranslatedVocabulary = (filePath: string): string[][] => {
         throw new Error('File is empty or not found');
     }
 
+    /**
+     * The translated phrases should be in the following format
+     * Every translated phrase must start with (-) and all of them before the five dashes (------):
+     * 
+     * -Translated Phrase 1.
+     * Original phrase 1.
+     * -Translated Phrase 2.
+     * Original phrase 2.
+     * -----
+     */
+
     let [translatedVocabularyBlock] = fileContent.split('-----');
     const lines = translatedVocabularyBlock.split('-')
         .map(line => line.split('\n'))
@@ -313,7 +397,12 @@ const getTranslatedVocabulary = (filePath: string): string[][] => {
     return lines
 }
 
-const processTranslatedPhrases = async (phrases: string[][]): Promise<number> => {
+const processTranslatedPhrases = async (phrases: string[][], token: string): Promise<number> => {
+    const { id: userId } = await getUserFromToken(token);
+    const userSettings = await getUserSettings(token);
+
+    const { origin_lang_id, learning_lang_id } = userSettings;
+
     let processedPhrasesIndex = 0;
     try {
         for await (const [translatedPhrase, originalPhrase] of phrases) {
@@ -322,10 +411,10 @@ const processTranslatedPhrases = async (phrases: string[][]): Promise<number> =>
             let [translated, priority] = translatedPhrase.split('#');
             priority = priority || '3'
             const [phraseId, translatedPhraseId] = await Promise.all([
-                savePhrase(originalPhrase, 3),
-                savePhrase(translated, 4)
+                savePhrase(originalPhrase, origin_lang_id, userId),
+                savePhrase(translated, learning_lang_id, userId)
             ])
-            await saveVocabulary(phraseId, translatedPhraseId, Number(priority));
+            await saveVocabulary({ phraseId, translatedPhraseId, priority: Number(priority), userId });
             console.log("🚀 Saved...", `Original: ${originalPhrase}`, `Translated: ${translatedPhrase}`, `Priority: ${priority}`);
             processedPhrasesIndex += 2;
         }
@@ -342,84 +431,4 @@ const processTranslatedPhrases = async (phrases: string[][]): Promise<number> =>
 
         throw { error: error, processedPhrasesIndex };
     }
-}
-
-export const loadRawVocabulary = async (req: any, res: any) => {
-    try {
-        const phrases = getRawVocabulary('/Users/danncortes/danncortes vault/Deutsche Texte/NEW.md');
-        await processPhrases(phrases);
-        res.status(200).send(phrases);
-    } catch (error: any) {
-        console.log("🚀 ~ loadNewVocabulary ~ error:", error);
-        res.status(400).send({ error: error.message });
-    }
-}
-
-const getFileContent = (filePath: string) => {
-    return fs.readFileSync(path.join(filePath), 'utf-8');
-}
-
-const getRawVocabulary = (filePath: string): [string, number][] => {
-    const fileContent = getFileContent(filePath);
-    if (!fileContent) {
-        throw new Error('File is empty or not found');
-    }
-
-    //Todo - Update
-    const lines: [string, number][] = fileContent.split('\n').map(line => {
-        line.trim();
-        let [phrase, priority] = line.split('#');
-        priority = priority || '3';
-        return [phrase, Number(priority)] as [string, number];
-    }).filter(line => {
-        const [phrase, priority] = line;
-        return phrase.length > 0;
-    });
-
-    return lines
-}
-
-const processPhrases = async (phrases: [string, number][]): Promise<void> => {
-    try {
-        for await (const [originalPhrase, priority] of phrases) {
-            console.log("🚀 Processing...", originalPhrase);
-        }
-    }
-    catch (error) {
-        console.error("Error processing phrases:", error);
-        throw error;
-    }
-}
-
-const savePhrase = async (text: string, langId: number): Promise<number> => {
-    const { data, error } = await supabaseClientTemp!
-        .from('phrases')
-        .insert({ text, language_id: langId })
-        .select('id');
-
-    if (error) {
-        throw error;
-    }
-
-    console.log("🚀 ~ savePhrase ~ data:", data)
-    return data[0].id;
-}
-
-const saveVocabulary = async (phraseIdFrom: number, phraseIdTo: number, priority: number): Promise<number> => {
-    const { data, error } = await supabaseClientTemp!
-        .from('phrase_translations')
-        .insert({
-            phrase_id: phraseIdFrom,
-            translated_phrase_id: phraseIdTo,
-            priority,
-            modified_at: null,
-            review_date: null
-        })
-        .select('id');
-
-    if (error) {
-        throw error;
-    }
-
-    return data[0].id;
 }

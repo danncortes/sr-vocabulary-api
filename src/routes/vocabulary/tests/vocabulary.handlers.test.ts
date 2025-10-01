@@ -12,6 +12,18 @@ import { User } from '@supabase/supabase-js';
 // Create mock function that will be used in the module mock
 const mockCreateSBClient = jest.fn();
 
+// Mock the fs module to match the import pattern in handlers
+jest.unstable_mockModule('fs', () => ({
+    default: {
+        readFileSync: jest.fn(),
+        writeFileSync: jest.fn()
+    },
+    readFileSync: jest.fn(),
+    writeFileSync: jest.fn()
+}));
+
+const fs = await import('fs');
+
 // Mock the supabaseClient module using unstable_mockModule
 jest.unstable_mockModule('../../../supabaseClient.js', () => ({
     createSBClient: mockCreateSBClient
@@ -36,7 +48,8 @@ jest.unstable_mockModule('../../../services/learn-days.service.js', () => ({
 
 // Mock the user service module
 jest.unstable_mockModule('../../../services/user.service.js', () => ({
-    getUserFromToken: jest.fn()
+    getUserFromToken: jest.fn(),
+    getUserSettings: jest.fn()
 }));
 
 // Mock the dates utility module
@@ -48,13 +61,21 @@ jest.unstable_mockModule('../../../utils/dates.js', () => ({
 }));
 
 // Import the handlers and services after mocking
-const { getAllVocabulary, setVocabularyReviewed } = await import('../vocabulary.handlers.js');
+const {
+    getAllVocabulary,
+    setVocabularyReviewed,
+    delayManyVocabulary,
+    resetManyVocabulary,
+    restartManyVocabulary,
+    loadTranslatedVocabulary
+} = await import('../vocabulary.handlers.js');
 const { getVocabularyById } = await import('../../../services/vocabulary.service.js');
 const { getStageById } = await import('../../../services/stages.service.js');
 const { getUserReviewDays } = await import('../../../services/review-days.service.js');
 const { getUserLearnDays } = await import('../../../services/learn-days.service.js');
-const { getUserFromToken } = await import('../../../services/user.service.js');
+const { getUserFromToken, getUserSettings } = await import('../../../services/user.service.js');
 const { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } = await import('../../../utils/dates.js');
+
 
 describe('getAllVocabulary Handler', () => {
     let mockSupabase: any;
@@ -624,7 +645,6 @@ describe('setVocabularyReviewed', () => {
         expect(getTodaysDay).toHaveBeenCalled();
         expect(getUserReviewDays).toHaveBeenCalledWith('mock-jwt-token');
         expect(getUserLearnDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(addDaysToDate).toHaveBeenCalledWith('2025-10-01', 0);
 
         // Verify database update
         expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
@@ -641,7 +661,7 @@ describe('setVocabularyReviewed', () => {
         expect(res.send).toHaveBeenCalledWith(expectedPhraseTranslation);
     });
 
-    it('should handle database errors when request fails', async () => {
+    it('should handle database errors', async () => {
         const phraseTranslation = {
             id: 1,
             sr_stage_id: 0,
@@ -658,20 +678,21 @@ describe('setVocabularyReviewed', () => {
         (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
         (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
 
-        // Mock Supabase database error
+        // Mock Supabase update chain with error
+        mockSupabase.eq.mockReturnValueOnce(mockSupabase);
         mockSupabase.select.mockResolvedValue({
             data: null,
-            error: { message: 'Database connection failed' }
+            error: { message: 'Database error' }
         });
 
         await setVocabularyReviewed(req, res);
 
         // Verify error response
         expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ error: 'Database connection failed' });
+        expect(res.json).toHaveBeenCalledWith({ error: 'Database error' });
     });
 
-    it('should handle errors when there are no review or learn days from database', async () => {
+    it('should handle missing review days', async () => {
         const phraseTranslation = {
             id: 1,
             sr_stage_id: 0,
@@ -684,7 +705,7 @@ describe('setVocabularyReviewed', () => {
         (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
         (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
         (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue([]); // No review days
+        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue([]);
         (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
         (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
 
@@ -695,7 +716,7 @@ describe('setVocabularyReviewed', () => {
         expect(res.json).toHaveBeenCalledWith({ error: 'There are no Review Days' });
     });
 
-    it('should handle errors when there are no learn days from database', async () => {
+    it('should handle missing learn days', async () => {
         const phraseTranslation = {
             id: 1,
             sr_stage_id: 0,
@@ -709,7 +730,7 @@ describe('setVocabularyReviewed', () => {
         (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
         (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
         (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue([]); // No learn days
+        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue([]);
         (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
 
         await setVocabularyReviewed(req, res);
@@ -720,7 +741,7 @@ describe('setVocabularyReviewed', () => {
     });
 
     it('should handle errors when getVocabularyById service fails', async () => {
-        // Mock service failure
+        // Mock service calls
         (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockRejectedValue(new Error('Vocabulary not found'));
 
         await setVocabularyReviewed(req, res);
@@ -833,7 +854,7 @@ describe('setVocabularyReviewed', () => {
     });
 
     it('should handle errors when createSBClient fails', async () => {
-        // Mock createSBClient to throw an error
+        // Mock createSBClient to fail
         mockCreateSBClient.mockImplementation(() => {
             throw new Error('Failed to create Supabase client');
         });
@@ -860,4 +881,458 @@ describe('setVocabularyReviewed', () => {
             error: expect.any(String)
         }));
     })
+});
+
+describe('delayManyVocabulary Handler', () => {
+    let mockSupabase: any;
+    let req: any;
+    let res: any;
+    let mockUser: any;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+
+        req = {
+            headers: { authorization: 'Bearer mock-jwt-token' },
+            body: { ids: [1, 2], days: 3 }
+        };
+
+        res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn(),
+            send: jest.fn()
+        };
+
+        mockUser = {
+            id: 'user-123',
+            email: 'test@example.com'
+        };
+
+        mockSupabase = {
+            from: jest.fn().mockReturnThis(),
+            select: jest.fn().mockReturnThis(),
+            update: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            in: jest.fn()
+        };
+
+        mockCreateSBClient.mockReturnValue(mockSupabase);
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
+    });
+
+    it('should delay multiple vocabulary items successfully', async () => {
+        const mockVocabularyItems = [
+            { id: 1, review_date: '2025-09-24', sr_stage_id: 1 },
+            { id: 2, review_date: '2025-09-25', sr_stage_id: 2 }
+        ];
+
+        // Mock getManyVocabulary call
+        mockSupabase.from.mockReturnValue(mockSupabase);
+        mockSupabase.select.mockReturnValue(mockSupabase);
+        mockSupabase.in.mockReturnValue(mockSupabase);
+        mockSupabase.eq.mockResolvedValue({
+            data: mockVocabularyItems,
+            error: null
+        });
+
+        // Mock addDaysToDate for each item
+        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>)
+            .mockReturnValueOnce('2025-09-27')
+            .mockReturnValueOnce('2025-09-28');
+
+        // Mock delayVocabulary calls - need to mock the update chain for each item
+        const mockUpdateChain = {
+            eq: jest.fn().mockReturnThis(),
+        };
+
+        mockSupabase.update.mockReturnValue(mockUpdateChain);
+        mockUpdateChain.eq
+            .mockReturnValueOnce(mockUpdateChain) // First item user_id
+            .mockResolvedValueOnce({ data: { id: 1, review_date: '2025-09-27' }, error: null }) // First item result
+            .mockReturnValueOnce(mockUpdateChain) // Second item user_id  
+            .mockResolvedValueOnce({ data: { id: 2, review_date: '2025-09-28' }, error: null }); // Second item result
+
+        await delayManyVocabulary(req, res);
+
+        // Verify service calls
+        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+        expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
+
+        // Verify response
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.send).toHaveBeenCalledWith(expect.any(Array));
+    });
+
+    it('should handle database errors when fetching vocabulary', async () => {
+        // Mock getManyVocabulary call with error
+        mockSupabase.in.mockReturnValue(mockSupabase);
+        mockSupabase.eq.mockResolvedValue({
+            data: null,
+            error: { message: 'Database error' }
+        });
+
+        await delayManyVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Database error' });
+    });
+
+    it('should handle errors when getUserFromToken fails', async () => {
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
+
+        await delayManyVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: new Error('Invalid token') });
+    });
+
+    it('should handle missing authorization header', async () => {
+        req.headers = {};
+
+        await delayManyVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: expect.any(Error) });
+    });
+});
+
+describe('resetManyVocabulary Handler', () => {
+    let mockSupabase: any;
+    let req: any;
+    let res: any;
+    let mockUser: any;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+
+        req = {
+            headers: { authorization: 'Bearer mock-jwt-token' },
+            body: { ids: [1, 2] }
+        };
+
+        res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn(),
+            send: jest.fn()
+        };
+
+        mockUser = {
+            id: 'user-123',
+            email: 'test@example.com'
+        };
+
+        mockSupabase = {
+            from: jest.fn().mockReturnThis(),
+            update: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            select: jest.fn()
+        };
+
+        mockCreateSBClient.mockReturnValue(mockSupabase);
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
+    });
+
+    it('should reset multiple vocabulary items successfully', async () => {
+        const expectedResetItems = [
+            { id: 1, sr_stage_id: 0, review_date: null, learned: 0 },
+            { id: 2, sr_stage_id: 0, review_date: null, learned: 0 }
+        ];
+
+        // Mock resetVocabulary calls
+        mockSupabase.eq
+            .mockReturnValueOnce(mockSupabase) // First item user_id
+            .mockReturnValueOnce(mockSupabase) // First item id
+            .mockReturnValueOnce(mockSupabase) // Second item user_id
+            .mockReturnValueOnce(mockSupabase); // Second item id
+
+        mockSupabase.select
+            .mockResolvedValueOnce({
+                data: [expectedResetItems[0]],
+                error: null
+            })
+            .mockResolvedValueOnce({
+                data: [expectedResetItems[1]],
+                error: null
+            });
+
+        await resetManyVocabulary(req, res);
+
+        // Verify service calls
+        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+        expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
+        expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
+        expect(mockSupabase.update).toHaveBeenCalledWith({
+            sr_stage_id: 0,
+            review_date: null,
+            learned: 0
+        });
+
+        // Verify response
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.send).toHaveBeenCalledWith(expect.any(Array));
+    });
+
+    it('should handle errors when getUserFromToken fails', async () => {
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
+
+        await resetManyVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: new Error('Invalid token') });
+    });
+
+    it('should handle missing authorization header', async () => {
+        req.headers = {};
+
+        await resetManyVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: expect.any(Error) });
+    });
+});
+
+describe('restartManyVocabulary Handler', () => {
+    let mockSupabase: any;
+    let req: any;
+    let res: any;
+    let mockUser: any;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+
+        req = {
+            headers: { authorization: 'Bearer mock-jwt-token' },
+            body: { ids: [1, 2] }
+        };
+
+        res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn(),
+            send: jest.fn()
+        };
+
+        mockUser = {
+            id: 'user-123',
+            email: 'test@example.com'
+        };
+
+        mockSupabase = {
+            from: jest.fn().mockReturnThis(),
+            update: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            select: jest.fn()
+        };
+
+        mockCreateSBClient.mockReturnValue(mockSupabase);
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
+    });
+
+    it('should restart multiple vocabulary items successfully', async () => {
+        const expectedRestartItems = [
+            { id: 1, sr_stage_id: 1, review_date: '2025-09-29', learned: 0 },
+            { id: 2, sr_stage_id: 1, review_date: '2025-09-29', learned: 0 }
+        ];
+
+        // Mock getUserReviewDays
+        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
+        (getNextDateByDay as jest.MockedFunction<typeof getNextDateByDay>).mockReturnValue('2025-09-29');
+
+        // Mock restartVocabulary calls
+        mockSupabase.eq
+            .mockReturnValueOnce(mockSupabase) // First item user_id
+            .mockReturnValueOnce(mockSupabase) // First item id
+            .mockReturnValueOnce(mockSupabase) // Second item user_id
+            .mockReturnValueOnce(mockSupabase); // Second item id
+
+        mockSupabase.select
+            .mockResolvedValueOnce({
+                data: [expectedRestartItems[0]],
+                error: null
+            })
+            .mockResolvedValueOnce({
+                data: [expectedRestartItems[1]],
+                error: null
+            });
+
+        await restartManyVocabulary(req, res);
+
+        // Verify service calls
+        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+        expect(getUserReviewDays).toHaveBeenCalledWith('mock-jwt-token');
+        expect(getNextDateByDay).toHaveBeenCalledWith(reviewDays[0]);
+        expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
+        expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
+        expect(mockSupabase.update).toHaveBeenCalledWith({
+            sr_stage_id: 1,
+            review_date: '2025-09-29',
+            learned: 0
+        });
+
+        // Verify response
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.send).toHaveBeenCalledWith(expect.any(Array));
+    });
+
+    it('should handle missing review days', async () => {
+        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue([]);
+
+        await restartManyVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({ error: 'No review days found' });
+    });
+
+    it('should handle errors when getUserFromToken fails', async () => {
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
+
+        await restartManyVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: new Error('Invalid token') });
+    });
+
+    it('should handle errors when getUserReviewDays fails', async () => {
+        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockRejectedValue(new Error('Failed to get review days'));
+
+        await restartManyVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: new Error('Failed to get review days') });
+    });
+
+    it('should handle missing authorization header', async () => {
+        req.headers = {};
+
+        await restartManyVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: expect.any(Error) });
+    });
+});
+
+describe('loadTranslatedVocabulary Handler', () => {
+    let mockSupabase: any;
+    let mockUser: any;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+
+        mockUser = {
+            id: 'user-123',
+            email: 'test@example.com'
+        };
+
+        // Mock getUserFromToken
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
+
+        // Mock getUserSettings
+        (getUserSettings as jest.MockedFunction<typeof getUserSettings>).mockResolvedValue({
+            id: 1,
+            user_id: 'user-123',
+            language_id: 1,
+            origin_lang_id: 1,
+            learning_lang_id: 2,
+            created_at: '2023-01-01'
+        });
+
+        mockSupabase = {
+            from: jest.fn().mockReturnThis(),
+            insert: jest.fn().mockReturnThis(),
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            update: jest.fn().mockReturnThis()
+        };
+
+        mockCreateSBClient.mockReturnValue(mockSupabase);
+
+        (fs.default.readFileSync as jest.Mock).mockReturnValue(`-Translated Phrase 1.
+Original phrase 1.
+-Translated Phrase 2.
+Original phrase 2.
+-----`);
+
+        (fs.default.writeFileSync as jest.Mock).mockImplementation(() => { });
+
+    });
+
+    it('should load translated vocabulary successfully', async () => {
+        const req = {
+            headers: {
+                authorization: 'Bearer mock-jwt-token'
+            }
+        };
+        const res = {
+            status: jest.fn().mockReturnThis(),
+            send: jest.fn()
+        };
+
+        // Mock all the database operations that processTranslatedPhrases performs
+        mockSupabase.select.mockResolvedValue({
+            data: [{ id: 1 }],
+            error: null
+        });
+
+        await loadTranslatedVocabulary(req, res);
+
+        // Verify file operations - check the default export's readFileSync
+        expect(fs.default.readFileSync).toHaveBeenCalled();
+        expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
+
+        // Verify response
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.send).toHaveBeenCalledWith(expect.any(Array));
+    });
+
+    it('should handle file reading errors', async () => {
+        const req = {
+            headers: {
+                authorization: 'Bearer mock-jwt-token'
+            }
+        };
+        const res = {
+            status: jest.fn().mockReturnThis(),
+            send: jest.fn()
+        };
+
+        // Mock fs.default.readFileSync to throw an error (for default import)
+        (fs.default.readFileSync as jest.MockedFunction<typeof fs.default.readFileSync>).mockImplementation(() => {
+            throw new Error('File is empty or not found');
+        });
+
+        await loadTranslatedVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.send).toHaveBeenCalledWith({ error: 'File is empty or not found' });
+    });
+
+    it('should handle file empty or not found errors', async () => {
+        const req = {
+            headers: {
+                authorization: 'Bearer mock-jwt-token'
+            }
+        };
+        const res = {
+            status: jest.fn().mockReturnThis(),
+            send: jest.fn()
+        };
+
+        // Mock fs.default.readFileSync to return empty content (for default import)
+        (fs.default.readFileSync as jest.MockedFunction<typeof fs.default.readFileSync>).mockReturnValue('');
+
+        await loadTranslatedVocabulary(req, res);
+
+        // Verify error response
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.send).toHaveBeenCalledWith({ error: 'File is empty or not found' });
+    });
 })

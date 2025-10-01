@@ -10,7 +10,6 @@ const mockDelayManyVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>
 const mockLoadTranslatedVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
 const mockResetManyVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
 const mockRestartManyVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
-const mockLoadRawVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
 
 // Mock the authentication middleware
 const mockAuthenticateToken = jest.fn() as jest.MockedFunction<RequestHandler>;
@@ -23,7 +22,6 @@ jest.unstable_mockModule('../vocabulary.handlers.js', () => ({
     loadTranslatedVocabulary: mockLoadTranslatedVocabulary,
     resetManyVocabulary: mockResetManyVocabulary,
     restartManyVocabulary: mockRestartManyVocabulary,
-    loadRawVocabulary: mockLoadRawVocabulary,
 }));
 
 // Mock the auth middleware
@@ -77,10 +75,6 @@ describe('Vocabulary Routes', () => {
 
         mockRestartManyVocabulary.mockImplementation((req, res) => {
             res.status(200).json({ message: 'restartManyVocabulary called' });
-        });
-
-        mockLoadRawVocabulary.mockImplementation((req, res) => {
-            res.status(200).json({ message: 'loadRawVocabulary called' });
         });
     });
 
@@ -149,17 +143,6 @@ describe('Vocabulary Routes', () => {
             expect(mockAuthenticateToken).toHaveBeenCalledTimes(1);
             expect(mockLoadTranslatedVocabulary).toHaveBeenCalledTimes(1);
         });
-
-        it('should call loadRawVocabulary handler for POST /load-raw with valid token', async () => {
-            await request(app)
-                .get('/vocabulary/load-raw')
-                .set('Authorization', validToken)
-                .send({})
-                .expect(200);
-
-            expect(mockAuthenticateToken).toHaveBeenCalledTimes(1);
-            expect(mockLoadRawVocabulary).toHaveBeenCalledTimes(1);
-        });
     });
 
     describe('Authentication Middleware Tests', () => {
@@ -172,7 +155,6 @@ describe('Vocabulary Routes', () => {
                 { method: 'post', path: '/vocabulary/reset' },
                 { method: 'post', path: '/vocabulary/restart' },
                 { method: 'get', path: '/vocabulary/load-translated' },
-                { method: 'get', path: '/vocabulary/load-raw' },
             ];
 
             for (const route of routes) {
@@ -229,7 +211,6 @@ describe('Vocabulary Routes', () => {
             await request(app).post('/vocabulary/reset').set('Authorization', validToken).send({});
             await request(app).post('/vocabulary/restart').set('Authorization', validToken).send({});
             await request(app).get('/vocabulary/load-translated').set('Authorization', validToken).send({});
-            await request(app).get('/vocabulary/load-raw').set('Authorization', validToken).send({});
 
             // Verify each handler was called exactly once
             expect(mockGetAllVocabulary).toHaveBeenCalledTimes(1);
@@ -238,10 +219,9 @@ describe('Vocabulary Routes', () => {
             expect(mockResetManyVocabulary).toHaveBeenCalledTimes(1);
             expect(mockRestartManyVocabulary).toHaveBeenCalledTimes(1);
             expect(mockLoadTranslatedVocabulary).toHaveBeenCalledTimes(1);
-            expect(mockLoadRawVocabulary).toHaveBeenCalledTimes(1);
 
             // Verify authentication middleware was called for each route
-            expect(mockAuthenticateToken).toHaveBeenCalledTimes(7);
+            expect(mockAuthenticateToken).toHaveBeenCalledTimes(6);
         });
     });
 

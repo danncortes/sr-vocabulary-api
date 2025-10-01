@@ -7,7 +7,6 @@ import {
     resetManyVocabulary,
     restartManyVocabulary,
     loadTranslatedVocabulary,
-    loadRawVocabulary
 } from './vocabulary.handlers.js';
 
 const router = Router();
@@ -19,6 +18,5 @@ router.post('/delay', authenticateToken, delayManyVocabulary);
 router.post('/reset', authenticateToken, resetManyVocabulary);
 router.post('/restart', authenticateToken, restartManyVocabulary);
 router.get('/load-translated', authenticateToken, loadTranslatedVocabulary);
-router.get('/load-raw', authenticateToken, loadRawVocabulary);
 
 export default router;
