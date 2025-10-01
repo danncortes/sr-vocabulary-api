@@ -3,7 +3,13 @@ import fs, { writeFileSync } from "fs";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../supabaseClient.js";
 import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
-import { getVocabularyById } from '../../services/vocabulary.service.js';
+import { 
+    getVocabularyById, 
+    getManyVocabulary, 
+    delayVocabulary, 
+    resetVocabulary, 
+    restartVocabulary 
+} from '../../services/vocabulary.service.js';
 import { getStageById } from '../../services/stages.service.js';
 import { getUserReviewDays } from "../../services/review-days.service.js";
 import { getUserLearnDays } from "../../services/learn-days.service.js";
@@ -133,41 +139,6 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
     }
 }
 
-type DelayVocabularyProps = {
-    vocabulary: any,
-    days: number,
-    userId: string,
-    supabaseInstance: SupabaseClient<any, string, any>
-}
-
-export const delayVocabulary = async (props: DelayVocabularyProps): Promise<any> => {
-    const { vocabulary, days, userId, supabaseInstance: supabase } = props;
-    const { review_date } = vocabulary;
-    const newReviewDate = addDaysToDate(review_date, days);
-    const { error } = await supabase
-        .from('phrase_translations')
-        .update({
-            review_date: newReviewDate
-        })
-        .eq('user_id', userId)
-        .eq('id', vocabulary.id);
-
-    if (error) {
-        return { error: error.message };
-    }
-    return { data: { ...vocabulary, review_date: newReviewDate } }
-}
-
-const getManyVocabulary = async (ids: number[], token: string) => {
-    const supabase = createSBClient(token);
-    const user = await getUserFromToken(token);
-    return supabase
-        .from('phrase_translations')
-        .select('*')
-        .in('id', ids)
-        .eq('user_id', user.id);
-}
-
 export const delayManyVocabulary = async (req: any, res: any): Promise<any> => {
     try {
         const token = req.headers.authorization?.replace('Bearer ', '');
@@ -217,49 +188,6 @@ export const resetManyVocabulary = async (req: any, res: any): Promise<any> => {
     } catch (error) {
         return res.status(500).json({ error: error });
     }
-}
-
-export const resetVocabulary = async (id: number, userId: string, supabase: SupabaseClient<any, string, any>): Promise<any> => {
-    const { data, error } = await supabase
-        .from('phrase_translations')
-        .update({
-            sr_stage_id: 0,
-            review_date: null,
-            learned: 0
-        })
-        .eq('user_id', userId)
-        .eq('id', id).select();
-
-    if (error) {
-        return { error: error.message };
-    }
-    return { data: data[0] }
-}
-
-type RestartVocabularyProps = {
-    vocabularyId: number,
-    userId: string,
-    reviewDate: string,
-    supabaseInstance: SupabaseClient<any, string, any>
-}
-
-export const restartVocabulary = async (props: RestartVocabularyProps): Promise<any> => {
-    const { vocabularyId, userId, reviewDate, supabaseInstance: supabase } = props;
-
-    const { data, error } = await supabase
-        .from('phrase_translations')
-        .update({
-            sr_stage_id: 1,
-            review_date: reviewDate,
-            learned: 0
-        })
-        .eq('user_id', userId)
-        .eq('id', vocabularyId).select();
-
-    if (error) {
-        return { error: error.message };
-    }
-    return { data: data[0] }
 }
 
 export const restartManyVocabulary = async (req: any, res: any): Promise<any> => {
