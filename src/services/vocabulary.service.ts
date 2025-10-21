@@ -116,3 +116,70 @@ export const restartVocabulary = async (props: RestartVocabularyProps): Promise<
     }
     return { data: data[0] }
 };
+
+export const deleteVocabulary = async (
+    vocabularyId: number,
+    userId: string,
+    supabase: SupabaseClient<any, string, any>
+): Promise<any> => {
+    // First, delete from phrase_translations and get the deleted row to know linked phrase IDs
+    const { data: deletedTranslations, error: ptError } = await supabase
+        .from('phrase_translations')
+        .delete()
+        .eq('user_id', userId)
+        .eq('id', vocabularyId)
+        .select('*');
+
+    if (ptError) {
+        return { error: ptError.message };
+    }
+    if (!deletedTranslations || deletedTranslations.length === 0) {
+        return { error: 'Vocabulary not found' };
+    }
+
+    const deletedTranslation = deletedTranslations[0];
+    const originalPhraseId = deletedTranslation.phrase_id;
+    const translatedPhraseId = deletedTranslation.translated_phrase_id;
+
+    // Helper to delete a phrase and remove its audio
+    const deletePhraseAndAudio = async (phraseId: number | null | undefined) => {
+        if (!phraseId) return;
+
+        // Delete phrase and get its audio_url from the deleted row
+        const { data: deletedPhrases, error: phrasesError } = await supabase
+            .from('phrases')
+            .delete()
+            .eq('user_id', userId)
+            .eq('id', phraseId)
+            .select('audio_url');
+
+        if (phrasesError) {
+            throw new Error(phrasesError.message);
+        }
+
+        const deletedPhrase = deletedPhrases && deletedPhrases[0];
+        const audioUrl = deletedPhrase?.audio_url;
+
+        // If audio_url exists, remove audio from Supabase Storage
+        if (audioUrl) {
+            const bucket = process.env.SUPABASE_BUCKET || '';
+            const { error: storageError } = await supabase.storage
+                .from(bucket)
+                .remove([audioUrl]);
+
+            if (storageError) {
+                throw new Error(storageError.message);
+            }
+        }
+    };
+
+    try {
+        await deletePhraseAndAudio(originalPhraseId);
+        await deletePhraseAndAudio(translatedPhraseId);
+    } catch (error: any) {
+        return { error: error.message || 'Failed to delete phrases or audio' };
+    }
+
+    return { data: vocabularyId };
+}
+

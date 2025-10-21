@@ -10,6 +10,9 @@ const mockDelayManyVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>
 const mockLoadTranslatedVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
 const mockResetManyVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
 const mockRestartManyVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
+const mockDeleteManyVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
+
+
 
 // Mock the authentication middleware
 const mockAuthenticateToken = jest.fn() as jest.MockedFunction<RequestHandler>;
@@ -22,6 +25,7 @@ jest.unstable_mockModule('../vocabulary.handlers.js', () => ({
     loadTranslatedVocabulary: mockLoadTranslatedVocabulary,
     resetManyVocabulary: mockResetManyVocabulary,
     restartManyVocabulary: mockRestartManyVocabulary,
+    deleteManyVocabulary: mockDeleteManyVocabulary,
 }));
 
 // Mock the auth middleware
@@ -31,6 +35,17 @@ jest.unstable_mockModule('../../../middleware/auth.js', () => ({
 
 // Import router after mocking
 const { default: router } = await import('../vocabulary.routes.js');
+
+// Fix handlers module mock path and include deleteManyVocabulary
+jest.unstable_mockModule('../vocabulary.handlers.js', () => ({
+    getAllVocabulary: jest.fn(),
+    setVocabularyReviewed: jest.fn(),
+    delayManyVocabulary: jest.fn(),
+    resetManyVocabulary: jest.fn(),
+    restartManyVocabulary: jest.fn(),
+    loadTranslatedVocabulary: jest.fn(),
+    deleteManyVocabulary: jest.fn()
+}));
 
 describe('Vocabulary Routes', () => {
     let app: express.Application;
@@ -75,6 +90,11 @@ describe('Vocabulary Routes', () => {
 
         mockRestartManyVocabulary.mockImplementation((req, res) => {
             res.status(200).json({ message: 'restartManyVocabulary called' });
+        });
+
+        // Add default mock implementation for delete route
+        mockDeleteManyVocabulary.mockImplementation((req, res) => {
+            res.status(200).json({ message: 'deleteManyVocabulary called' });
         });
     });
 
@@ -143,6 +163,18 @@ describe('Vocabulary Routes', () => {
             expect(mockAuthenticateToken).toHaveBeenCalledTimes(1);
             expect(mockLoadTranslatedVocabulary).toHaveBeenCalledTimes(1);
         });
+
+        // Add delete route mapping test
+        it('should call deleteManyVocabulary handler for POST /delete with valid token', async () => {
+            await request(app)
+                .post('/vocabulary/delete')
+                .set('Authorization', validToken)
+                .send({})
+                .expect(200);
+
+            expect(mockAuthenticateToken).toHaveBeenCalledTimes(1);
+            expect(mockDeleteManyVocabulary).toHaveBeenCalledTimes(1);
+        });
     });
 
     describe('Authentication Middleware Tests', () => {
@@ -155,6 +187,8 @@ describe('Vocabulary Routes', () => {
                 { method: 'post', path: '/vocabulary/reset' },
                 { method: 'post', path: '/vocabulary/restart' },
                 { method: 'get', path: '/vocabulary/load-translated' },
+                // Include delete route
+                { method: 'post', path: '/vocabulary/delete' },
             ];
 
             for (const route of routes) {
@@ -211,6 +245,8 @@ describe('Vocabulary Routes', () => {
             await request(app).post('/vocabulary/reset').set('Authorization', validToken).send({});
             await request(app).post('/vocabulary/restart').set('Authorization', validToken).send({});
             await request(app).get('/vocabulary/load-translated').set('Authorization', validToken).send({});
+            // Hit delete route
+            await request(app).post('/vocabulary/delete').set('Authorization', validToken).send({});
 
             // Verify each handler was called exactly once
             expect(mockGetAllVocabulary).toHaveBeenCalledTimes(1);
@@ -219,9 +255,10 @@ describe('Vocabulary Routes', () => {
             expect(mockResetManyVocabulary).toHaveBeenCalledTimes(1);
             expect(mockRestartManyVocabulary).toHaveBeenCalledTimes(1);
             expect(mockLoadTranslatedVocabulary).toHaveBeenCalledTimes(1);
+            expect(mockDeleteManyVocabulary).toHaveBeenCalledTimes(1);
 
             // Verify authentication middleware was called for each route
-            expect(mockAuthenticateToken).toHaveBeenCalledTimes(6);
+            expect(mockAuthenticateToken).toHaveBeenCalledTimes(7);
         });
     });
 

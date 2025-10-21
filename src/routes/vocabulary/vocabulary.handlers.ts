@@ -3,12 +3,13 @@ import fs, { writeFileSync } from "fs";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../supabaseClient.js";
 import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
-import { 
-    getVocabularyById, 
-    getManyVocabulary, 
-    delayVocabulary, 
-    resetVocabulary, 
-    restartVocabulary 
+import {
+    getVocabularyById,
+    getManyVocabulary,
+    delayVocabulary,
+    resetVocabulary,
+    restartVocabulary,
+    deleteVocabulary
 } from '../../services/vocabulary.service.js';
 import { getStageById } from '../../services/stages.service.js';
 import { getUserReviewDays } from "../../services/review-days.service.js";
@@ -358,5 +359,32 @@ const processTranslatedPhrases = async (phrases: string[][], token: string): Pro
         }
 
         throw { error: error, processedPhrasesIndex };
+    }
+}
+
+export const deleteManyVocabulary = async (req: any, res: any): Promise<any> => {
+    try {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        const supabase = createSBClient(token);
+        const { id: userId } = await getUserFromToken(token);
+        const { ids } = req.body;
+
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'No vocabulary IDs provided' });
+        }
+
+        const deletedIds: number[] = [];
+
+        for await (const id of ids) {
+            const { data, error } = await deleteVocabulary(id, userId, supabase);
+            if (error) {
+                return res.status(500).json({ error });
+            }
+            deletedIds.push(data);
+        }
+
+        return res.status(200).send(deletedIds);
+    } catch (error) {
+        return res.status(500).json({ error: error });
     }
 }

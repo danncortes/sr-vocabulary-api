@@ -23,13 +23,14 @@ jest.unstable_mockModule('../../utils/dates.js', () => ({
 }));
 
 // Import the service functions after mocking
-const { 
-    getVocabularyById, 
-    getVocabularyByIds, 
-    getManyVocabulary, 
-    delayVocabulary, 
-    resetVocabulary, 
-    restartVocabulary 
+const {
+    getVocabularyById,
+    getVocabularyByIds,
+    getManyVocabulary,
+    delayVocabulary,
+    resetVocabulary,
+    restartVocabulary,
+    deleteVocabulary
 } = await import('../vocabulary.service.js');
 
 describe('getVocabularyById Function', () => {
@@ -497,5 +498,106 @@ describe('restartVocabulary Function', () => {
 
         // Assert
         expect(result).toEqual({ error: errorMessage });
+    });
+});
+
+// Add the new import to existing service test imports
+
+describe('deleteVocabulary Function', () => {
+    let mockSupabase: any;
+    const bucket = 'test-bucket';
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        process.env.SUPABASE_BUCKET = bucket;
+
+        const mockRemove = jest.fn().mockResolvedValue({ data: null, error: null });
+
+        mockSupabase = {
+            from: jest.fn().mockReturnThis(),
+            delete: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            select: jest.fn(),
+            storage: {
+                from: jest.fn().mockReturnValue({ remove: mockRemove })
+            }
+        };
+    });
+
+    it('should delete vocabulary and associated phrases and audio', async () => {
+        const vocabularyId = 1;
+        const userId = 'user-123';
+
+        // phrase_translations delete returns the row with phrase ids
+        mockSupabase.select
+            .mockResolvedValueOnce({ data: [{ id: 1, phrase_id: 10, translated_phrase_id: 20 }], error: null }) // phrase_translations
+            .mockResolvedValueOnce({ data: [{ audio_url: '10.mp3' }], error: null }) // original phrase
+            .mockResolvedValueOnce({ data: [{ audio_url: '20.mp3' }], error: null }); // translated phrase
+
+        const result = await deleteVocabulary(vocabularyId, userId, mockSupabase);
+
+        expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
+        expect(mockSupabase.delete).toHaveBeenCalled();
+        expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', userId);
+        expect(mockSupabase.eq).toHaveBeenCalledWith('id', vocabularyId);
+        expect(mockSupabase.select).toHaveBeenCalledWith('*');
+
+        expect(mockSupabase.from).toHaveBeenCalledWith('phrases');
+        expect(mockSupabase.select).toHaveBeenCalledWith('audio_url');
+        expect(mockSupabase.storage.from).toHaveBeenCalledWith(bucket);
+        expect(mockSupabase.storage.from).toHaveBeenCalledTimes(2);
+
+        expect(result).toEqual({ data: vocabularyId });
+    });
+
+    it('should return error when vocabulary not found', async () => {
+        mockSupabase.select.mockResolvedValueOnce({ data: [], error: null });
+
+        const result = await deleteVocabulary(1, 'user-123', mockSupabase);
+
+        expect(result).toEqual({ error: 'Vocabulary not found' });
+    });
+
+    it('should return error when phrase_translations delete fails', async () => {
+        mockSupabase.select.mockResolvedValueOnce({ data: null, error: { message: 'Delete PT failed' } });
+
+        const result = await deleteVocabulary(1, 'user-123', mockSupabase);
+
+        expect(result).toEqual({ error: 'Delete PT failed' });
+    });
+
+    it('should handle phrases delete error', async () => {
+        mockSupabase.select
+            .mockResolvedValueOnce({ data: [{ phrase_id: 10, translated_phrase_id: 20 }], error: null }) // phrase_translations
+            .mockResolvedValueOnce({ data: null, error: { message: 'Phrases delete failed' } }); // original phrase delete error
+
+        const result = await deleteVocabulary(1, 'user-123', mockSupabase);
+
+        expect(result).toEqual({ error: 'Phrases delete failed' });
+    });
+
+    it('should handle storage remove error', async () => {
+        const mockRemove = jest.fn().mockResolvedValue({ data: null, error: { message: 'Storage remove failed' } });
+        mockSupabase.storage.from = jest.fn().mockReturnValue({ remove: mockRemove });
+
+        mockSupabase.select
+            .mockResolvedValueOnce({ data: [{ phrase_id: 10, translated_phrase_id: 20 }], error: null })
+            .mockResolvedValueOnce({ data: [{ audio_url: '10.mp3' }], error: null })
+            .mockResolvedValueOnce({ data: [{ audio_url: '20.mp3' }], error: null });
+
+        const result = await deleteVocabulary(1, 'user-123', mockSupabase);
+
+        expect(result).toEqual({ error: 'Storage remove failed' });
+    });
+
+    it('should skip storage remove when audio_url is null', async () => {
+        mockSupabase.select
+            .mockResolvedValueOnce({ data: [{ phrase_id: 10, translated_phrase_id: 20 }], error: null })
+            .mockResolvedValueOnce({ data: [{ audio_url: null }], error: null })
+            .mockResolvedValueOnce({ data: [{ audio_url: null }], error: null });
+
+        await deleteVocabulary(1, 'user-123', mockSupabase);
+
+        expect(mockSupabase.storage.from).not.toHaveBeenCalled();
     });
 });

@@ -9,6 +9,7 @@ import {
 } from '../../../__mocks__/vocabulary.mock.js';
 import { User } from '@supabase/supabase-js';
 
+
 // Create mock function that will be used in the module mock
 const mockCreateSBClient = jest.fn();
 
@@ -35,7 +36,8 @@ jest.unstable_mockModule('../../../services/vocabulary.service.js', () => ({
     getManyVocabulary: jest.fn(),
     delayVocabulary: jest.fn(),
     resetVocabulary: jest.fn(),
-    restartVocabulary: jest.fn()
+    restartVocabulary: jest.fn(),
+    deleteVocabulary: jest.fn()
 }));
 
 jest.unstable_mockModule('../../../services/stages.service.js', () => ({
@@ -71,9 +73,10 @@ const {
     delayManyVocabulary,
     resetManyVocabulary,
     restartManyVocabulary,
-    loadTranslatedVocabulary
+    loadTranslatedVocabulary,
+    deleteManyVocabulary
 } = await import('../vocabulary.handlers.js');
-const { getVocabularyById, getManyVocabulary, delayVocabulary, resetVocabulary, restartVocabulary } = await import('../../../services/vocabulary.service.js');
+const { getVocabularyById, getManyVocabulary, delayVocabulary, resetVocabulary, restartVocabulary, deleteVocabulary } = await import('../../../services/vocabulary.service.js');
 const { getStageById } = await import('../../../services/stages.service.js');
 const { getUserReviewDays } = await import('../../../services/review-days.service.js');
 const { getUserLearnDays } = await import('../../../services/learn-days.service.js');
@@ -1309,4 +1312,89 @@ Original phrase 2.
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.send).toHaveBeenCalledWith({ error: 'File is empty or not found' });
     });
-})
+});
+
+describe('deleteManyVocabulary Handler', () => {
+    let mockSupabase: any;
+    let req: any;
+    let res: any;
+    let mockUser: any;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+
+        req = {
+            headers: { authorization: 'Bearer mock-jwt-token' },
+            body: { ids: [1, 2] }
+        };
+
+        res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn(),
+            send: jest.fn()
+        };
+
+        mockUser = {
+            id: 'user-123',
+            email: 'test@example.com'
+        };
+
+        const mockRemove = jest.fn().mockResolvedValue({ data: null, error: null });
+
+        mockSupabase = {
+            from: jest.fn().mockReturnThis(),
+            delete: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            select: jest.fn(),
+            storage: {
+                from: jest.fn().mockReturnValue({ remove: mockRemove })
+            }
+        };
+
+        mockCreateSBClient.mockReturnValue(mockSupabase);
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
+    });
+
+    it('should delete multiple vocabulary items successfully', async () => {
+        // Mock service function for each id
+        (deleteVocabulary as jest.MockedFunction<typeof deleteVocabulary>)
+            .mockResolvedValueOnce({ data: 1 })
+            .mockResolvedValueOnce({ data: 2 });
+
+        await deleteManyVocabulary(req, res);
+
+        expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.send).toHaveBeenCalledWith([1, 2]);
+    });
+
+    it('should return 400 when no ids are provided', async () => {
+        req.body = { ids: [] };
+
+        await deleteManyVocabulary(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({ error: 'No vocabulary IDs provided' });
+    });
+
+    it('should handle errors from deleteVocabulary service', async () => {
+        (deleteVocabulary as jest.MockedFunction<typeof deleteVocabulary>)
+            .mockResolvedValueOnce({ data: 1 })
+            .mockResolvedValueOnce({ error: 'Failed to delete' });
+
+        await deleteManyVocabulary(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Failed to delete' });
+    });
+
+    it('should handle missing authorization header', async () => {
+        req.headers = {};
+        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
+
+        await deleteManyVocabulary(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({ error: new Error('Invalid token') });
+    });
+});
