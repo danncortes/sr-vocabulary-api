@@ -1,15 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
+import { getUserFromToken } from '../services/user.service.js'
 
 // Extend the Request interface to include the token
 declare global {
     namespace Express {
         interface Request {
             token?: string;
+            user?: any;
         }
     }
 }
 
-export const authenticateToken = (req: Request, res: Response, next: NextFunction): void => {
+export const authenticateToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const tokenError = 'Invalid or missing token';
+
     try {
         const { authorization } = req.headers;
         const token: string = (authorization && authorization.startsWith('Bearer '))
@@ -18,14 +22,23 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
 
         if (!token) {
             res.status(401).json({ error: 'Unauthorized' });
-            return; // Don't return the response object, just return void
+            return;
         }
 
-        // Add the token to the request object for use in handlers
+        // Use user service to resolve the user and catch expiration
+        const user = await getUserFromToken(token);
+
+        // Attach token and user to the request for downstream handlers
         req.token = token;
+        req.user = user;
         next();
-    } catch (error) {
-        res.status(401).json({ error: 'Invalid token' });
-        return; // Don't return the response object, just return void
+    } catch (error: any) {
+        const msg = (error?.message || '').toLowerCase();
+        if (msg.includes('expired')) {
+            res.status(401).json({ error: 'Unauthorized: token expired' });
+            return;
+        }
+        res.status(401).json({ error: tokenError });
+        return;
     }
 };

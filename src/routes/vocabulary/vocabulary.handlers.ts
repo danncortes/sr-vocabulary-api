@@ -20,8 +20,7 @@ let supabaseClientTemp: SupabaseClient<any, string, any> | null
 
 export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     try {
-        const token = req.token;
-        const user = await getUserFromToken(token);
+        const { token, user } = req;
         const supabase = createSBClient(token);
 
         const { data, error } = await supabase
@@ -67,9 +66,8 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
 export const setVocabularyReviewed = async (req: any, res: any): Promise<any> => {
     try {
         const { id } = req.body;
-        const { token } = req;
+        const { token, user } = req;
         const supabase = createSBClient(token);
-        const user = await getUserFromToken(token);
 
         // Now with built-in error handling
         const vocabulary = await getVocabularyById(id, token);
@@ -133,8 +131,6 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
         } else {
             return res.status(400).json({ error: reviewDays.length === 0 ? 'There are no Review Days' : 'There are no Learn Days' });
         }
-
-
     } catch (error) {
         return res.status(500).json({ error: (error as Error).message });
     }
@@ -142,9 +138,8 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
 
 export const delayManyVocabulary = async (req: any, res: any): Promise<any> => {
     try {
-        const token = req.headers.authorization?.replace('Bearer ', '');
+        const { token, user } = req;
         const supabase = createSBClient(token);
-        const { id: userId } = await getUserFromToken(token);
         const { ids, days } = req.body;
 
         const vocabulary = await getManyVocabulary(ids, token);
@@ -156,7 +151,7 @@ export const delayManyVocabulary = async (req: any, res: any): Promise<any> => {
         const newVocabulary = [];
 
         for await (const item of vocabulary.data) {
-            const { data, error } = await delayVocabulary({ vocabulary: item, days, userId, supabaseInstance: supabase });
+            const { data, error } = await delayVocabulary({ vocabulary: item, days, userId: user.id, supabaseInstance: supabase });
             newVocabulary.push(data);
 
             if (error) {
@@ -173,15 +168,14 @@ export const delayManyVocabulary = async (req: any, res: any): Promise<any> => {
 
 export const resetManyVocabulary = async (req: any, res: any): Promise<any> => {
     try {
-        const token = req.headers.authorization?.replace('Bearer ', '');
+        const { token, user } = req;
         const supabase = createSBClient(token);
-        const { id: userId } = await getUserFromToken(token);
         const { ids } = req.body;
 
         const newVocabulary = [];
 
         for await (const id of ids) {
-            let { data } = await resetVocabulary(id, userId, supabase);
+            let { data } = await resetVocabulary(id, user.id, supabase);
             newVocabulary.push(data);
         }
 
@@ -193,9 +187,8 @@ export const resetManyVocabulary = async (req: any, res: any): Promise<any> => {
 
 export const restartManyVocabulary = async (req: any, res: any): Promise<any> => {
     try {
-        const token = req.headers.authorization?.replace('Bearer ', '');
+        const { token, user } = req;
         const supabase = createSBClient(token);
-        const { id: userId } = await getUserFromToken(token);
         const reviewDays = await getUserReviewDays(token);
 
         if (!reviewDays || reviewDays.length === 0) {
@@ -207,7 +200,7 @@ export const restartManyVocabulary = async (req: any, res: any): Promise<any> =>
         const reviewDate = getNextDateByDay(reviewDays[0])
 
         for await (const id of ids) {
-            let { data } = await restartVocabulary({ vocabularyId: id, userId, reviewDate, supabaseInstance: supabase });
+            let { data } = await restartVocabulary({ vocabularyId: id, userId: user.id, reviewDate, supabaseInstance: supabase });
             newVocabulary.push(data);
         }
 
@@ -264,14 +257,14 @@ const saveVocabulary = async (params: SaveVocabularyParams): Promise<number> => 
 }
 
 export const loadTranslatedVocabulary = async (req: any, res: any) => {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+    const { token, user } = req;
     supabaseClientTemp = createSBClient(token);
     let processedPhrasesIndex = 0;
 
     try {
         const phrases = getTranslatedVocabulary('/Users/danncortes/danncortes vault/Deutsche Texte/NEW.md');
 
-        processedPhrasesIndex = await processTranslatedPhrases(phrases, token);
+        processedPhrasesIndex = await processTranslatedPhrases(phrases, token, user.id);
 
         res.status(200).send(phrases);
     } catch (error: any) {
@@ -326,8 +319,7 @@ const getTranslatedVocabulary = (filePath: string): string[][] => {
     return lines
 }
 
-const processTranslatedPhrases = async (phrases: string[][], token: string): Promise<number> => {
-    const { id: userId } = await getUserFromToken(token);
+const processTranslatedPhrases = async (phrases: string[][], token: string, userId: string): Promise<number> => {
     const userSettings = await getUserSettings(token);
 
     const { origin_lang_id, learning_lang_id } = userSettings;

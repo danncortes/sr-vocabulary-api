@@ -1,3 +1,4 @@
+// Ensure mocked auth attaches both req.token and req.user; add user extraction test
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import request from 'supertest';
 import express from 'express';
@@ -266,16 +267,16 @@ describe('Vocabulary Routes', () => {
         it('should pass extracted token to handlers', async () => {
             const testToken = 'test-token-456';
 
-            // Mock middleware to extract and pass specific token
             mockAuthenticateToken.mockImplementation((req: any, res, next) => {
                 req.token = testToken;
+                req.user = { id: 'user-456' };
                 next();
             });
 
-            // Mock handler to verify token is available
             mockGetAllVocabulary.mockImplementation((req: any, res) => {
                 expect(req.token).toBe(testToken);
-                res.status(200).json({ token: req.token });
+                expect(req.user).toEqual({ id: 'user-456' });
+                res.status(200).json({ token: req.token, user: req.user });
             });
 
             const response = await request(app)
@@ -284,6 +285,7 @@ describe('Vocabulary Routes', () => {
                 .expect(200);
 
             expect(response.body.token).toBe(testToken);
+            expect(response.body.user).toEqual({ id: 'user-456' });
         });
     });
 });

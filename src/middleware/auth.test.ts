@@ -1,75 +1,98 @@
+// Mock user service and use it in valid/expired token tests
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import { Request, Response, NextFunction } from 'express';
-import { authenticateToken } from './auth.js';
+
+let authenticateToken: (req: Request, res: Response, next: NextFunction) => Promise<void>;
+let mockGetUserFromToken: jest.Mock;
+let mockCreateSBClient: jest.Mock;
+let mockAuthGetUser: jest.MockedFunction<() => Promise<{ data: { user: { id: string } } | null; error: any }>>;
 
 describe('authenticateToken Middleware', () => {
     let mockRequest: Partial<Request>;
     let mockResponse: Partial<Response>;
     let mockNext: jest.MockedFunction<NextFunction>;
 
-    beforeEach(() => {
-        // Reset mocks before each test
-        mockRequest = {
-            headers: {}
-        };
+    beforeEach(async () => {
+        jest.resetModules();
+        jest.resetAllMocks();
 
-        mockResponse = {
-            status: jest.fn().mockReturnThis() as unknown as (code: number) => Response,
-            json: jest.fn().mockReturnThis() as unknown as Response['json']
-        };
-
+        mockRequest = { headers: {} };
+        mockResponse = { status: jest.fn().mockReturnThis() as any, json: jest.fn().mockReturnThis() as any };
         mockNext = jest.fn() as unknown as jest.MockedFunction<NextFunction>;
+
+        mockAuthGetUser = jest.fn(async () => ({
+            data: { user: { id: 'user-1' } },
+            error: null
+        }));
+
+        mockCreateSBClient = jest.fn(() => ({
+            auth: { getUser: mockAuthGetUser }
+        }));
+
+        // Supabase client mock
+        jest.unstable_mockModule('../supabaseClient.js', () => ({
+            createSBClient: mockCreateSBClient
+        }));
+
+        // User service mock — critical for expectations
+        mockGetUserFromToken = jest.fn().mockResolvedValue({ id: 'user-1', email: 'u@example.com' });
+        jest.unstable_mockModule('../services/user.service.js', () => ({
+            getUserFromToken: mockGetUserFromToken
+        }));
+
+        ({ authenticateToken } = await import('./auth.js'));
     });
 
     describe('Valid Token Scenarios', () => {
-        it('should extract token from valid Bearer authorization header and call next()', () => {
-            // Arrange
+        it('should extract token and attach user, then call next()', async () => {
             const validToken = 'valid-jwt-token-123';
-            mockRequest.headers = {
-                authorization: `Bearer ${validToken}`
-            };
+            mockRequest.headers = { authorization: `Bearer ${validToken}` };
 
-            // Act
-            authenticateToken(
-                mockRequest as Request,
-                mockResponse as Response,
-                mockNext
-            );
+            await authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
 
-            // Assert
-            expect(mockRequest.token).toBe(validToken);
+            expect(mockGetUserFromToken).toHaveBeenCalledWith(validToken);
+            expect((mockRequest as any).token).toBe(validToken);
+            expect((mockRequest as any).user).toEqual({ id: 'user-1', email: 'u@example.com' });
             expect(mockNext).toHaveBeenCalledTimes(1);
             expect(mockResponse.status).not.toHaveBeenCalled();
             expect(mockResponse.json).not.toHaveBeenCalled();
         });
 
-        it('should handle Bearer token with extra spaces', () => {
-            // Arrange
+        it('should handle Bearer token with extra spaces', async () => {
             const validToken = 'token-with-spaces';
-            mockRequest.headers = {
-                authorization: `Bearer   ${validToken}`
-            };
+            mockRequest.headers = { authorization: `Bearer   ${validToken}` };
 
-            // Act
-            authenticateToken(
-                mockRequest as Request,
-                mockResponse as Response,
-                mockNext
-            );
+            await authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
 
-            // Assert
-            expect(mockRequest.token).toBe(validToken); // Spaces should be trimmed
+            expect((mockRequest as any).token).toBe(validToken);
+            expect(mockGetUserFromToken).toHaveBeenCalledWith(validToken);
             expect(mockNext).toHaveBeenCalledTimes(1);
         });
     });
 
+    describe('Expired Token', () => {
+        it('should return 401 when token is expired', async () => {
+            const expiredToken = 'expired-token';
+            mockRequest.headers = { authorization: `Bearer ${expiredToken}` };
+
+            // Make user service report expiration
+            mockGetUserFromToken.mockRejectedValue(new Error('JWT expired'));
+
+            await authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
+
+            expect(mockResponse.status).toHaveBeenCalledWith(401);
+            expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Unauthorized: token expired' });
+            expect(mockNext).not.toHaveBeenCalled();
+        });
+    });
+
     describe('Missing Authorization Header', () => {
-        it('should return 401 when authorization header is missing', () => {
+        it('should return 401 when authorization header is missing', async () => {
             // Arrange
             mockRequest.headers = {}; // No authorization header
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -82,14 +105,14 @@ describe('authenticateToken Middleware', () => {
             expect(mockRequest.token).toBeUndefined();
         });
 
-        it('should return 401 when authorization header is undefined', () => {
+        it('should return 401 when authorization header is undefined', async () => {
             // Arrange
             mockRequest.headers = {
                 authorization: undefined
-            };
+            } as any;
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -103,14 +126,14 @@ describe('authenticateToken Middleware', () => {
     });
 
     describe('Malformed Authorization Header', () => {
-        it('should return 401 when authorization header does not start with "Bearer "', () => {
+        it('should return 401 when authorization header does not start with "Bearer "', async () => {
             // Arrange
             mockRequest.headers = {
                 authorization: 'Basic dXNlcjpwYXNz' // Basic auth instead of Bearer
             };
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -123,14 +146,14 @@ describe('authenticateToken Middleware', () => {
             expect(mockRequest.token).toBeUndefined();
         });
 
-        it('should return 401 when authorization header is just "Bearer" without token', () => {
+        it('should return 401 when authorization header is just "Bearer" without token', async () => {
             // Arrange
             mockRequest.headers = {
                 authorization: 'Bearer'
             };
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -142,14 +165,14 @@ describe('authenticateToken Middleware', () => {
             expect(mockNext).not.toHaveBeenCalled();
         });
 
-        it('should return 401 when authorization header is "Bearer " with only spaces', () => {
+        it('should return 401 when authorization header is "Bearer " with only spaces', async () => {
             // Arrange
             mockRequest.headers = {
                 authorization: 'Bearer  ' // Only spaces after Bearer
             };
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -161,14 +184,14 @@ describe('authenticateToken Middleware', () => {
             expect(mockNext).not.toHaveBeenCalled();
         });
 
-        it('should return 401 when token is just a raw token without Bearer prefix', () => {
+        it('should return 401 when token is just a raw token without Bearer prefix', async () => {
             // Arrange
             mockRequest.headers = {
                 authorization: 'just-a-raw-token'
             };
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -180,14 +203,14 @@ describe('authenticateToken Middleware', () => {
             expect(mockNext).not.toHaveBeenCalled();
         });
 
-        it('should return 401 when authorization header is empty string', () => {
+        it('should return 401 when authorization header is empty string', async () => {
             // Arrange
             mockRequest.headers = {
                 authorization: ''
             };
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -201,14 +224,14 @@ describe('authenticateToken Middleware', () => {
     });
 
     describe('Case Sensitivity', () => {
-        it('should return 401 for "bearer" (lowercase)', () => {
+        it('should return 401 for "bearer" (lowercase)', async () => {
             // Arrange
             mockRequest.headers = {
                 authorization: 'bearer valid-token'
             };
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -220,14 +243,14 @@ describe('authenticateToken Middleware', () => {
             expect(mockNext).not.toHaveBeenCalled();
         });
 
-        it('should return 401 for "BEARER" (uppercase)', () => {
+        it('should return 401 for "BEARER" (uppercase)', async () => {
             // Arrange
             mockRequest.headers = {
                 authorization: 'BEARER valid-token'
             };
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -241,7 +264,7 @@ describe('authenticateToken Middleware', () => {
     });
 
     describe('Exception Handling', () => {
-        it('should handle exceptions and return 401 with "Invalid token" message', () => {
+        it('should handle exceptions and return 401 with "Invalid or missing token" message', async () => {
             // Arrange
             const mockRequestWithError = {
                 get headers() {
@@ -250,7 +273,7 @@ describe('authenticateToken Middleware', () => {
             };
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequestWithError as unknown as Request,
                 mockResponse as Response,
                 mockNext
@@ -258,18 +281,18 @@ describe('authenticateToken Middleware', () => {
 
             // Assert
             expect(mockResponse.status).toHaveBeenCalledWith(401);
-            expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid token' });
+            expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid or missing token' });
             expect(mockNext).not.toHaveBeenCalled();
         });
 
-        it('should handle null authorization header gracefully', () => {
+        it('should handle null authorization header gracefully', async () => {
             // Arrange
             mockRequest.headers = {
                 authorization: null as any
             };
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -283,12 +306,12 @@ describe('authenticateToken Middleware', () => {
     });
 
     describe('Response Behavior', () => {
-        it('should not return the response object (should return void)', () => {
+        it('should not return the response object (should return void)', async () => {
             // Arrange
             mockRequest.headers = {};
 
             // Act
-            const result = authenticateToken(
+            const result = await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -298,12 +321,12 @@ describe('authenticateToken Middleware', () => {
             expect(result).toBeUndefined();
         });
 
-        it('should chain response methods correctly', () => {
+        it('should chain response methods correctly', async () => {
             // Arrange
             mockRequest.headers = {};
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -312,13 +335,12 @@ describe('authenticateToken Middleware', () => {
             // Assert
             expect(mockResponse.status).toHaveBeenCalledWith(401);
             expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
-            // Verify chaining works
             expect(mockResponse.status).toHaveReturnedWith(mockResponse);
         });
     });
 
     describe('Token Assignment', () => {
-        it('should assign extracted token to request.token property', () => {
+        it('should assign extracted token to request.token property', async () => {
             // Arrange
             const testToken = 'test-token-assignment';
             mockRequest.headers = {
@@ -326,7 +348,7 @@ describe('authenticateToken Middleware', () => {
             };
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext
@@ -338,12 +360,12 @@ describe('authenticateToken Middleware', () => {
             expect(typeof mockRequest.token).toBe('string');
         });
 
-        it('should not assign token property when authentication fails', () => {
+        it('should not assign token property when authentication fails', async () => {
             // Arrange
             mockRequest.headers = {};
 
             // Act
-            authenticateToken(
+            await authenticateToken(
                 mockRequest as Request,
                 mockResponse as Response,
                 mockNext

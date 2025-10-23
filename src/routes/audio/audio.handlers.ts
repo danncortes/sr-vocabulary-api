@@ -62,7 +62,7 @@ const generateAndSaveAudio = async (text: string, id: number): Promise<number> =
         throw error.message;
     }
 
-    console.log(`Audio for: ${text} saved with id: ${id}`)
+    console.log(`Audio for: ${text} - saved with id: ${id}`)
 
     return id
 }

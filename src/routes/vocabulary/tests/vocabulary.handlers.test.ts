@@ -95,7 +95,11 @@ describe('getAllVocabulary Handler', () => {
 
         // Setup mock request and response
         req = {
-            token: 'mock-jwt-token' // Token is now provided by middleware
+            token: 'mock-jwt-token',
+            user: {
+                id: 'user-123',
+                email: 'test@example.com'
+            }
         };
         res = {
             status: jest.fn().mockReturnThis(),
@@ -113,12 +117,6 @@ describe('getAllVocabulary Handler', () => {
         };
 
         mockCreateSBClient.mockReturnValue(mockSupabase);
-
-        // Mock getUserFromToken to return a user object
-        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue({
-            id: 'user-123',
-            email: 'test@example.com'
-        } as User);
     });
 
     describe('successful requests', () => {
@@ -139,7 +137,7 @@ describe('getAllVocabulary Handler', () => {
             await getAllVocabulary(req, res);
 
             // Assert
-            expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+
             expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
             expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
             expect(mockSupabase.select).toHaveBeenCalledWith(`
@@ -186,23 +184,10 @@ describe('getAllVocabulary Handler', () => {
             await getAllVocabulary(req, res);
 
             // Assert
-            expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+
             expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
             expect(res.status).toHaveBeenCalledWith(500);
             expect(res.json).toHaveBeenCalledWith({ error: 'Database connection failed' });
-        });
-
-        it('should handle auth.getUser failing', async () => {
-            // Mock getUserFromToken to fail
-            (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
-
-            // Act
-            await getAllVocabulary(req, res);
-
-            // Assert
-            expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
-            expect(res.status).toHaveBeenCalledWith(500);
-            expect(res.json).toHaveBeenCalledWith({ error: new Error('Invalid token') });
         });
     });
 });
@@ -218,18 +203,17 @@ describe('setVocabularyReviewed', () => {
 
         req = {
             body: { id: 1 },
-            token: 'mock-jwt-token'
+            token: 'mock-jwt-token',
+            user: {
+                id: 'user-123',
+                email: 'test@example.com'
+            }
         };
 
         res = {
             status: jest.fn().mockReturnThis(),
             json: jest.fn(),
             send: jest.fn()
-        };
-
-        mockUser = {
-            id: 'user-123',
-            email: 'test@example.com'
         };
 
         mockSupabase = {
@@ -240,9 +224,6 @@ describe('setVocabularyReviewed', () => {
         };
 
         mockCreateSBClient.mockReturnValue(mockSupabase);
-
-        // Mock getUserFromToken to return a user object
-        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
     });
 
     it('should set vocabulary with stage 0 on a learn day as reviewed', async () => {
@@ -280,7 +261,7 @@ describe('setVocabularyReviewed', () => {
         await setVocabularyReviewed(req, res);
 
         // Verify service calls
-        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+
         expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getStageById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getTodaysDay).toHaveBeenCalled();
@@ -338,7 +319,7 @@ describe('setVocabularyReviewed', () => {
         await setVocabularyReviewed(req, res);
 
         // Verify service calls
-        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+
         expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getStageById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getTodaysDay).toHaveBeenCalled();
@@ -398,7 +379,7 @@ describe('setVocabularyReviewed', () => {
         await setVocabularyReviewed(req, res);
 
         // Verify service calls
-        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+
         expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getStageById).toHaveBeenCalledWith(2, 'mock-jwt-token');
         expect(getTodaysDay).toHaveBeenCalled();
@@ -849,17 +830,6 @@ describe('setVocabularyReviewed', () => {
         expect(res.json).toHaveBeenCalledWith({ error: 'Failed to get today\'s day' });
     });
 
-    it('should handle errors when getUserFromToken fails', async () => {
-        // Mock getUserFromToken to fail
-        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
-
-        await setVocabularyReviewed(req, res);
-
-        // Verify error response
-        expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ error: 'Invalid token' });
-    });
-
     it('should handle errors when createSBClient fails', async () => {
         // Mock createSBClient to fail
         mockCreateSBClient.mockImplementation(() => {
@@ -894,13 +864,16 @@ describe('delayManyVocabulary Handler', () => {
     let mockSupabase: any;
     let req: any;
     let res: any;
-    let mockUser: any;
 
     beforeEach(() => {
         jest.clearAllMocks();
 
         req = {
-            headers: { authorization: 'Bearer mock-jwt-token' },
+            token: 'mock-jwt-token',
+            user: {
+                id: 'user-123',
+                email: 'test@example.com'
+            },
             body: { ids: [1, 2], days: 3 }
         };
 
@@ -908,11 +881,6 @@ describe('delayManyVocabulary Handler', () => {
             status: jest.fn().mockReturnThis(),
             json: jest.fn(),
             send: jest.fn()
-        };
-
-        mockUser = {
-            id: 'user-123',
-            email: 'test@example.com'
         };
 
         mockSupabase = {
@@ -924,7 +892,6 @@ describe('delayManyVocabulary Handler', () => {
         };
 
         mockCreateSBClient.mockReturnValue(mockSupabase);
-        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
     });
 
     it('should delay multiple vocabulary items successfully', async () => {
@@ -947,7 +914,7 @@ describe('delayManyVocabulary Handler', () => {
         await delayManyVocabulary(req, res);
 
         // Verify service calls
-        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+
         expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
         expect(getManyVocabulary).toHaveBeenCalledWith([1, 2], 'mock-jwt-token');
         expect(delayVocabulary).toHaveBeenCalledTimes(2);
@@ -971,16 +938,6 @@ describe('delayManyVocabulary Handler', () => {
         expect(res.json).toHaveBeenCalledWith({ error: 'Database error' });
     });
 
-    it('should handle errors when getUserFromToken fails', async () => {
-        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
-
-        await delayManyVocabulary(req, res);
-
-        // Verify error response
-        expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ error: new Error('Invalid token') });
-    });
-
     it('should handle missing authorization header', async () => {
         req.headers = {};
 
@@ -1002,13 +959,16 @@ describe('resetManyVocabulary Handler', () => {
     let mockSupabase: any;
     let req: any;
     let res: any;
-    let mockUser: any;
 
     beforeEach(() => {
         jest.clearAllMocks();
 
         req = {
-            headers: { authorization: 'Bearer mock-jwt-token' },
+            token: 'mock-jwt-token',
+            user: {
+                id: 'user-123',
+                email: 'test@example.com'
+            },
             body: { ids: [1, 2] }
         };
 
@@ -1016,11 +976,6 @@ describe('resetManyVocabulary Handler', () => {
             status: jest.fn().mockReturnThis(),
             json: jest.fn(),
             send: jest.fn()
-        };
-
-        mockUser = {
-            id: 'user-123',
-            email: 'test@example.com'
         };
 
         mockSupabase = {
@@ -1031,7 +986,6 @@ describe('resetManyVocabulary Handler', () => {
         };
 
         mockCreateSBClient.mockReturnValue(mockSupabase);
-        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
     });
 
     it('should reset multiple vocabulary items successfully', async () => {
@@ -1048,7 +1002,7 @@ describe('resetManyVocabulary Handler', () => {
         await resetManyVocabulary(req, res);
 
         // Verify service calls
-        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+
         expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
         expect(resetVocabulary).toHaveBeenCalledTimes(2);
         expect(resetVocabulary).toHaveBeenCalledWith(1, 'user-123', mockSupabase);
@@ -1057,16 +1011,6 @@ describe('resetManyVocabulary Handler', () => {
         // Verify response
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.send).toHaveBeenCalledWith(expect.any(Array));
-    });
-
-    it('should handle errors when getUserFromToken fails', async () => {
-        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
-
-        await resetManyVocabulary(req, res);
-
-        // Verify error response
-        expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ error: new Error('Invalid token') });
     });
 
     it('should handle missing authorization header', async () => {
@@ -1084,13 +1028,16 @@ describe('restartManyVocabulary Handler', () => {
     let mockSupabase: any;
     let req: any;
     let res: any;
-    let mockUser: any;
 
     beforeEach(() => {
         jest.clearAllMocks();
 
         req = {
-            headers: { authorization: 'Bearer mock-jwt-token' },
+            token: 'mock-jwt-token',
+            user: {
+                id: 'user-123',
+                email: 'test@example.com'
+            },
             body: { ids: [1, 2] }
         };
 
@@ -1098,11 +1045,6 @@ describe('restartManyVocabulary Handler', () => {
             status: jest.fn().mockReturnThis(),
             json: jest.fn(),
             send: jest.fn()
-        };
-
-        mockUser = {
-            id: 'user-123',
-            email: 'test@example.com'
         };
 
         mockSupabase = {
@@ -1113,7 +1055,6 @@ describe('restartManyVocabulary Handler', () => {
         };
 
         mockCreateSBClient.mockReturnValue(mockSupabase);
-        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
         (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
         (getNextDateByDay as jest.MockedFunction<typeof getNextDateByDay>).mockReturnValue('2025-09-29');
     });
@@ -1132,7 +1073,7 @@ describe('restartManyVocabulary Handler', () => {
         await restartManyVocabulary(req, res);
 
         // Verify service calls
-        expect(getUserFromToken).toHaveBeenCalledWith('mock-jwt-token');
+
         expect(getUserReviewDays).toHaveBeenCalledWith('mock-jwt-token');
         expect(getNextDateByDay).toHaveBeenCalledWith(reviewDays[0]);
         expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
@@ -1165,16 +1106,6 @@ describe('restartManyVocabulary Handler', () => {
         expect(res.json).toHaveBeenCalledWith({ error: 'No review days found' });
     });
 
-    it('should handle errors when getUserFromToken fails', async () => {
-        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockRejectedValue(new Error('Invalid token'));
-
-        await restartManyVocabulary(req, res);
-
-        // Verify error response
-        expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ error: new Error('Invalid token') });
-    });
-
     it('should handle errors when getUserReviewDays fails', async () => {
         (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockRejectedValue(new Error('Failed to get review days'));
 
@@ -1198,18 +1129,26 @@ describe('restartManyVocabulary Handler', () => {
 
 describe('loadTranslatedVocabulary Handler', () => {
     let mockSupabase: any;
-    let mockUser: any;
+    let req: any;
+    let res: any;
 
     beforeEach(() => {
         jest.clearAllMocks();
 
-        mockUser = {
-            id: 'user-123',
-            email: 'test@example.com'
+        req = {
+            token: 'mock-jwt-token',
+            user: {
+                id: 'user-123',
+                email: 'test@example.com'
+            },
+            body: { filePath: '/path/to/file.md' }
         };
 
-        // Mock getUserFromToken
-        (getUserFromToken as jest.MockedFunction<typeof getUserFromToken>).mockResolvedValue(mockUser);
+        res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn(),
+            send: jest.fn()
+        };
 
         // Mock getUserSettings
         (getUserSettings as jest.MockedFunction<typeof getUserSettings>).mockResolvedValue({
@@ -1242,11 +1181,6 @@ Original phrase 2.
     });
 
     it('should load translated vocabulary successfully', async () => {
-        const req = {
-            headers: {
-                authorization: 'Bearer mock-jwt-token'
-            }
-        };
         const res = {
             status: jest.fn().mockReturnThis(),
             send: jest.fn()
@@ -1262,7 +1196,6 @@ Original phrase 2.
 
         // Verify file operations - check the default export's readFileSync
         expect(fs.default.readFileSync).toHaveBeenCalled();
-        expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
 
         // Verify response
         expect(res.status).toHaveBeenCalledWith(200);
@@ -1339,7 +1272,7 @@ describe('deleteManyVocabulary Handler', () => {
             email: 'test@example.com'
         };
 
-        const mockRemove = jest.fn().mockResolvedValue({ data: null, error: null });
+        const mockRemove = jest.fn().mockResolvedValue({ data: null, error: null } as any);
 
         mockSupabase = {
             from: jest.fn().mockReturnThis(),
