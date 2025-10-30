@@ -511,7 +511,7 @@ describe('deleteVocabulary Function', () => {
         jest.clearAllMocks();
         process.env.SUPABASE_BUCKET = bucket;
 
-        const mockRemove = jest.fn().mockResolvedValue({ data: null, error: null });
+        const mockRemove = jest.fn<() => Promise<{ data: null; error: null }>>().mockResolvedValue({ data: null, error: null });
 
         mockSupabase = {
             from: jest.fn().mockReturnThis(),
@@ -577,7 +577,7 @@ describe('deleteVocabulary Function', () => {
     });
 
     it('should handle storage remove error', async () => {
-        const mockRemove = jest.fn().mockResolvedValue({ data: null, error: { message: 'Storage remove failed' } });
+        const mockRemove = jest.fn<() => Promise<{ data: null; error: { message: string } }>>().mockResolvedValue({ data: null, error: { message: 'Storage remove failed' } });
         mockSupabase.storage.from = jest.fn().mockReturnValue({ remove: mockRemove });
 
         mockSupabase.select

@@ -3,7 +3,7 @@ import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import { Request, Response, NextFunction } from 'express';
 
 let authenticateToken: (req: Request, res: Response, next: NextFunction) => Promise<void>;
-let mockGetUserFromToken: jest.Mock;
+let mockGetUserFromToken: jest.MockedFunction<(token: string) => Promise<any>>;
 let mockCreateSBClient: jest.Mock;
 let mockAuthGetUser: jest.MockedFunction<() => Promise<{ data: { user: { id: string } } | null; error: any }>>;
 
@@ -35,7 +35,8 @@ describe('authenticateToken Middleware', () => {
         }));
 
         // User service mock — critical for expectations
-        mockGetUserFromToken = jest.fn().mockResolvedValue({ id: 'user-1', email: 'u@example.com' });
+        mockGetUserFromToken = jest.fn() as jest.MockedFunction<(token: string) => Promise<any>>;
+        mockGetUserFromToken.mockResolvedValue({ id: 'user-1', email: 'u@example.com' });
         jest.unstable_mockModule('../services/user.service.js', () => ({
             getUserFromToken: mockGetUserFromToken
         }));

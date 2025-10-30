@@ -903,8 +903,11 @@ describe('delayManyVocabulary Handler', () => {
         // Mock getManyVocabulary service function
         (getManyVocabulary as jest.MockedFunction<typeof getManyVocabulary>).mockResolvedValue({
             data: mockVocabularyItems,
-            error: null
-        });
+            error: null,
+            count: null,
+            status: 200,
+            statusText: 'OK'
+        } as any);
 
         // Mock delayVocabulary service function for each item
         (delayVocabulary as jest.MockedFunction<typeof delayVocabulary>)
@@ -928,8 +931,8 @@ describe('delayManyVocabulary Handler', () => {
         // Mock getManyVocabulary service function with error
         (getManyVocabulary as jest.MockedFunction<typeof getManyVocabulary>).mockResolvedValue({
             data: null,
-            error: { message: 'Database error' }
-        });
+            error: { message: 'Database error', details: '', hint: '', code: '', name: 'PostgrestError' }
+        } as any);
 
         await delayManyVocabulary(req, res);
 
@@ -944,8 +947,8 @@ describe('delayManyVocabulary Handler', () => {
         // Mock getManyVocabulary to return an error since no token is provided
         (getManyVocabulary as jest.MockedFunction<typeof getManyVocabulary>).mockResolvedValue({
             data: null,
-            error: { message: 'Database error' }
-        });
+            error: { message: 'Database error', details: '', hint: '', code: '', name: 'PostgrestError' }
+        } as any);
 
         await delayManyVocabulary(req, res);
 
@@ -1272,7 +1275,7 @@ describe('deleteManyVocabulary Handler', () => {
             email: 'test@example.com'
         };
 
-        const mockRemove = jest.fn().mockResolvedValue({ data: null, error: null } as any);
+        const mockRemove = jest.fn<() => Promise<{ data: null; error: null }>>().mockResolvedValue({ data: null, error: null });
 
         mockSupabase = {
             from: jest.fn().mockReturnThis(),
