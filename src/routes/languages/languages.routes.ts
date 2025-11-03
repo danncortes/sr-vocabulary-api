@@ -1,9 +1,9 @@
 import express from 'express';
-import { getLanguages, getLanguageTranslations } from './languages.handlers.js';
+import { authenticateToken } from '../../middleware/auth.js';
+import { getLanguageTranslations } from './languages.handlers.js';
 
 const router = express.Router();
 
-router.get('/translations', getLanguageTranslations);
-router.get('/', getLanguages);
+router.get('/translations', authenticateToken, getLanguageTranslations);
 
 export default router;

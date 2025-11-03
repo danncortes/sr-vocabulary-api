@@ -1,5 +1,7 @@
 import express from 'express';
 import { createSBClient } from '../../supabaseClient.js';
+import { authenticateToken } from '../../middleware/auth.js';
+import { getUserSettings } from './user.handlers.js';
 
 const router = express.Router();
 
@@ -56,5 +58,6 @@ const login = async (req: any, res: any): Promise<any> => {
 }
 
 router.post('/login', login);
+router.get('/settings', authenticateToken, getUserSettings);
 
 export default router;
