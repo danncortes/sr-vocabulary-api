@@ -2,6 +2,30 @@ import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../supabaseClient.js";
 import { ElevenLabsClient } from 'elevenlabs';
 
+// Debug endpoint to test ElevenLabs API directly
+export const testElevenLabsApi = async (req: any, res: any) => {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+
+    try {
+        const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+            headers: {
+                'xi-api-key': apiKey || ''
+            }
+        });
+
+        const data = await response.json();
+        return res.status(response.status).json({
+            status: response.status,
+            keyPrefix: apiKey?.substring(0, 5),
+            keyLength: apiKey?.length,
+            voicesCount: data.voices?.length,
+            error: response.ok ? null : data
+        });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message });
+    }
+};
+
 let evenlabsClient: ElevenLabsClient | null = null;
 
 const getElevenLabsClient = (): ElevenLabsClient => {
@@ -75,9 +99,8 @@ const generateAndSaveAudio = async (text: string, id: number): Promise<number> =
 
 const generateSpeech = async (text: string): Promise<Buffer> => {
     try {
-        // Using default voice "Rachel" - original was 'IKne3meq5aSn9XLyUdCD'
         const audio = await getElevenLabsClient().textToSpeech.convertAsStream(
-            '21m00Tcm4TlvDq8ikWAM',
+            'IKne3meq5aSn9XLyUdCD',
             {
                 text,
                 model_id: 'eleven_multilingual_v2'
