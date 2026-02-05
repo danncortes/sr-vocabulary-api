@@ -6,12 +6,8 @@ let evenlabsClient: ElevenLabsClient | null = null;
 
 const getElevenLabsClient = (): ElevenLabsClient => {
     if (!evenlabsClient) {
-        const apiKey = process.env.ELEVENLABS_API_KEY;
-        console.log('ELEVENLABS_API_KEY exists:', !!apiKey);
-        console.log('ELEVENLABS_API_KEY length:', apiKey?.length);
-        console.log('ELEVENLABS_API_KEY prefix:', apiKey?.substring(0, 5));
         evenlabsClient = new ElevenLabsClient({
-            apiKey
+            apiKey: process.env.ELEVENLABS_API_KEY
         });
     }
     return evenlabsClient;
@@ -79,8 +75,9 @@ const generateAndSaveAudio = async (text: string, id: number): Promise<number> =
 
 const generateSpeech = async (text: string): Promise<Buffer> => {
     try {
+        // Using default voice "Rachel" - original was 'IKne3meq5aSn9XLyUdCD'
         const audio = await getElevenLabsClient().textToSpeech.convertAsStream(
-            'IKne3meq5aSn9XLyUdCD',
+            '21m00Tcm4TlvDq8ikWAM',
             {
                 text,
                 model_id: 'eleven_multilingual_v2'
