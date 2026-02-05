@@ -67,7 +67,7 @@ const generateAndSaveAudio = async (text: string, id: number): Promise<number> =
     return id
 }
 
-const generateSpeech = async (text: string): Promise<ArrayBuffer> => {
+const generateSpeech = async (text: string): Promise<Buffer> => {
     try {
         const audio = await evenlabsClient.textToSpeech.convertAsStream(
             'IKne3meq5aSn9XLyUdCD',
@@ -92,14 +92,13 @@ const generateSpeech = async (text: string): Promise<ArrayBuffer> => {
     }
 }
 
-const saveAudio = async (audio: Buffer, id: number) => {
-    const bucket = process.env.SUPABASE_BUCKET || '';
+const saveAudio = async (audio: Buffer, id: number, bucketName: string = process.env.SUPABASE_BUCKET || '') => {
 
     try {
         const audioName = `${id}.mp3`;
 
         const { error } = await supabaseTempClient!.storage
-            .from(bucket)
+            .from(bucketName)
             .upload(audioName, audio, {
                 contentType: 'audio/mp3',
                 upsert: true
@@ -167,5 +166,72 @@ export const generateAudioPhrases = async (req: any, res: any) => {
         return res.status(200).send(savedAudios);
     } catch (error) {
         return res.status(500).json({ error: error });
+    }
+}
+
+const generateAudio = async (text: string, supabase: SupabaseClient<any, string, any>): Promise<string> => {
+    const timestamp = Date.now();
+    const filename = `${timestamp}.mp3`;
+
+    const audio = await generateSpeech(text);
+    const audioBuffer = Buffer.from(audio);
+
+    const bucket = process.env.SUPABASE_BUCKET || '';
+    const { error } = await supabase.storage
+        .from(bucket)
+        .upload(filename, audioBuffer, {
+            contentType: 'audio/mp3',
+            upsert: true
+        });
+
+    if (error) {
+        throw error.message;
+    }
+
+    console.log(`Audio for: ${text} - saved as: ${filename}`)
+
+    return filename;
+}
+
+export const generateAudioFromText = async (req: any, res: any) => {
+    try {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        const supabase = createSBClient(token);
+        const { text } = req.body;
+
+        if (!text) {
+            return res.status(400).json({ error: 'Text is required' });
+        }
+
+        const filename = await generateAudio(text, supabase);
+
+        return res.status(200).json({ filename });
+    } catch (error) {
+        return res.status(500).json({ error: error });
+    }
+}
+
+export const deleteAudios = async (req: any, res: any) => {
+    try {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        const supabase = createSBClient(token);
+        const { filenames } = req.body;
+
+        if (!filenames || !Array.isArray(filenames) || filenames.length === 0) {
+            return res.status(400).json({ error: 'Filenames array is required' });
+        }
+
+        const bucket = process.env.SUPABASE_BUCKET || '';
+        const { error } = await supabase.storage
+            .from(bucket)
+            .remove(filenames);
+
+        if (error) {
+            return res.status(500).json({ error: error.message });
+        }
+
+        return res.status(200).json({ deleted: filenames });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message || error });
     }
 }
