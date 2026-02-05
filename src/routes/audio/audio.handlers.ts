@@ -1,41 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../supabaseClient.js";
-import { ElevenLabsClient } from 'elevenlabs';
-
-// Debug endpoint to test ElevenLabs API directly
-export const testElevenLabsApi = async (req: any, res: any) => {
-    const apiKey = process.env.ELEVENLABS_API_KEY;
-
-    try {
-        const response = await fetch('https://api.elevenlabs.io/v1/voices', {
-            headers: {
-                'xi-api-key': apiKey || ''
-            }
-        });
-
-        const data = await response.json();
-        return res.status(response.status).json({
-            status: response.status,
-            keyPrefix: apiKey?.substring(0, 5),
-            keyLength: apiKey?.length,
-            voicesCount: data.voices?.length,
-            error: response.ok ? null : data
-        });
-    } catch (error: any) {
-        return res.status(500).json({ error: error.message });
-    }
-};
-
-let evenlabsClient: ElevenLabsClient | null = null;
-
-const getElevenLabsClient = (): ElevenLabsClient => {
-    if (!evenlabsClient) {
-        evenlabsClient = new ElevenLabsClient({
-            apiKey: process.env.ELEVENLABS_API_KEY
-        });
-    }
-    return evenlabsClient;
-};
 
 let supabaseTempClient: SupabaseClient<any, string, any> | null = null;
 let tempToken = '';
@@ -99,23 +63,29 @@ const generateAndSaveAudio = async (text: string, id: number): Promise<number> =
 
 const generateSpeech = async (text: string): Promise<Buffer> => {
     try {
-        const audio = await getElevenLabsClient().textToSpeech.convertAsStream(
-            'IKne3meq5aSn9XLyUdCD',
+        const voiceId = 'IKne3meq5aSn9XLyUdCD';
+        const response = await fetch(
+            `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
             {
-                text,
-                model_id: 'eleven_multilingual_v2'
+                method: 'POST',
+                headers: {
+                    'xi-api-key': process.env.ELEVENLABS_API_KEY || '',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    text,
+                    model_id: 'eleven_multilingual_v2'
+                })
             }
         );
 
-        // Collect all chunks into a buffer
-        const chunks: Uint8Array[] = [];
-        for await (const chunk of audio) {
-            chunks.push(chunk);
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`ElevenLabs API error: ${response.status} - ${error}`);
         }
-        const audioBuffer = Buffer.concat(chunks);
 
-        return audioBuffer;
-        // Play the audio buffer using playMp3
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
     } catch (error) {
         console.error('Error generating speech:', error);
         throw error;
