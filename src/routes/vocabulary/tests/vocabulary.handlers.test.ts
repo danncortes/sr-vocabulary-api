@@ -1155,12 +1155,9 @@ describe('loadTranslatedVocabulary Handler', () => {
 
         // Mock getUserSettings
         (getUserSettings as jest.MockedFunction<typeof getUserSettings>).mockResolvedValue({
-            id: 1,
-            user_id: 'user-123',
-            language_id: 1,
-            origin_lang_id: 1,
-            learning_lang_id: 2,
-            created_at: '2023-01-01'
+            system_lang: { id: 1, locale_code: 'en' },
+            learning_lang: { id: 2, locale_code: 'es' },
+            origin_lang: { id: 1, locale_code: 'en' }
         });
 
         mockSupabase = {

@@ -239,21 +239,13 @@ describe('User Settings Service', () => {
                 data: { user: mockUser },
                 error: null
             });
-            const settingsWithExtraFields = {
-                id: 1,
-                user_id: 'user-123',
-                learn_days: ['Monday', 'Wednesday', 'Friday'],
-                review_days: ['Tuesday', 'Thursday'],
-                daily_goal: 20,
-                notifications_enabled: false,
-                theme: 'dark',
-                language: 'en',
-                timezone: 'UTC',
-                created_at: '2024-01-01T00:00:00Z',
-                updated_at: '2024-01-15T10:30:00Z'
+            const settingsWithDifferentLocales = {
+                system_lang: { id: 2, locale_code: 'es' },
+                learning_lang: { id: 3, locale_code: 'fr' },
+                origin_lang: { id: 4, locale_code: 'de' }
             };
             mockSupabase.eq.mockReturnValue({
-                data: [settingsWithExtraFields],
+                data: [settingsWithDifferentLocales],
                 error: null
             });
 
@@ -261,10 +253,10 @@ describe('User Settings Service', () => {
             const result = await getUserSettings(mockToken);
 
             // Assert
-            expect(result).toEqual(settingsWithExtraFields);
-            expect(result.theme).toBe('dark');
-            expect(result.language).toBe('en');
-            expect(result.timezone).toBe('UTC');
+            expect(result).toEqual(settingsWithDifferentLocales);
+            expect(result.system_lang.locale_code).toBe('es');
+            expect(result.learning_lang.locale_code).toBe('fr');
+            expect(result.origin_lang.locale_code).toBe('de');
         });
 
         it('should handle different user ID formats', async () => {
