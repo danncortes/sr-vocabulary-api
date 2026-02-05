@@ -1,5 +1,17 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../supabaseClient.js";
+import { ElevenLabsClient } from 'elevenlabs';
+
+let evenlabsClient: ElevenLabsClient | null = null;
+
+const getElevenLabsClient = (): ElevenLabsClient => {
+    if (!evenlabsClient) {
+        evenlabsClient = new ElevenLabsClient({
+            apiKey: process.env.ELEVENLABS_API_KEY
+        });
+    }
+    return evenlabsClient;
+};
 
 let supabaseTempClient: SupabaseClient<any, string, any> | null = null;
 let tempToken = '';
@@ -63,29 +75,19 @@ const generateAndSaveAudio = async (text: string, id: number): Promise<number> =
 
 const generateSpeech = async (text: string): Promise<Buffer> => {
     try {
-        const voiceId = 'IKne3meq5aSn9XLyUdCD';
-        const response = await fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
+        const audio = await getElevenLabsClient().textToSpeech.convertAsStream(
+            'IKne3meq5aSn9XLyUdCD',
             {
-                method: 'POST',
-                headers: {
-                    'xi-api-key': process.env.ELEVENLABS_API_KEY || '',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    text,
-                    model_id: 'eleven_multilingual_v2'
-                })
+                text,
+                model_id: 'eleven_multilingual_v2'
             }
         );
 
-        if (!response.ok) {
-            const error = await response.text();
-            throw new Error(`ElevenLabs API error: ${response.status} - ${error}`);
+        const chunks: Uint8Array[] = [];
+        for await (const chunk of audio) {
+            chunks.push(chunk);
         }
-
-        const arrayBuffer = await response.arrayBuffer();
-        return Buffer.from(arrayBuffer);
+        return Buffer.concat(chunks);
     } catch (error) {
         console.error('Error generating speech:', error);
         throw error;
