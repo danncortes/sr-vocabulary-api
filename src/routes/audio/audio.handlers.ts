@@ -6,8 +6,12 @@ let evenlabsClient: ElevenLabsClient | null = null;
 
 const getElevenLabsClient = (): ElevenLabsClient => {
     if (!evenlabsClient) {
+        const apiKey = process.env.ELEVENLABS_API_KEY;
+        console.log('ELEVENLABS_API_KEY exists:', !!apiKey);
+        console.log('ELEVENLABS_API_KEY length:', apiKey?.length);
+        console.log('ELEVENLABS_API_KEY prefix:', apiKey?.substring(0, 5));
         evenlabsClient = new ElevenLabsClient({
-            apiKey: process.env.ELEVENLABS_API_KEY
+            apiKey
         });
     }
     return evenlabsClient;
