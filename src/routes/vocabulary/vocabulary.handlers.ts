@@ -71,7 +71,6 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
         const { token, user } = req;
         const supabase = createSBClient(token);
 
-        // Now with built-in error handling
         const vocabulary = await getVocabularyById(id, token);
 
         const { review_date, sr_stage_id, learned: isLearned } = vocabulary;
@@ -79,7 +78,6 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
         const newStageId = sr_stage_id + 1;
         const learned = newStageId === 6 ? 1 : isLearned;
 
-        // Use the new stages service function with built-in error handling
         const stage = await getStageById(newStageId, token);
         const { days: daysToAdd } = stage;
 

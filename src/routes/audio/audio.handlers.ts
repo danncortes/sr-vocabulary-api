@@ -67,7 +67,7 @@ const generateAndSaveAudio = async (text: string, id: number): Promise<number> =
     return id
 }
 
-const generateSpeech = async (text: string): Promise<ArrayBuffer> => {
+const generateSpeech = async (text: string): Promise<Buffer> => {
     try {
         const audio = await evenlabsClient.textToSpeech.convertAsStream(
             'IKne3meq5aSn9XLyUdCD',
