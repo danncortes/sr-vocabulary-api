@@ -74,7 +74,9 @@ const {
     resetManyVocabulary,
     restartManyVocabulary,
     loadTranslatedVocabulary,
-    deleteManyVocabulary
+    deleteManyVocabulary,
+    createVocabulary,
+    updateVocabulary
 } = await import('../vocabulary.handlers.js');
 const { getVocabularyById, getManyVocabulary, delayVocabulary, resetVocabulary, restartVocabulary, deleteVocabulary } = await import('../../../services/vocabulary.service.js');
 const { getStageById } = await import('../../../services/stages.service.js');
@@ -150,12 +152,14 @@ describe('getAllVocabulary Handler', () => {
             original:phrases!phrase_id (
                 id,
                 text,
-                audio_url
+                audio_url,
+                locale:languages!language_id(id, locale_code)
             ),
             translated:phrases!translated_phrase_id (
                 id,
                 text,
-                audio_url
+                audio_url,
+                locale:languages!language_id(id, locale_code)
             )
         `);
             expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', 'user-123');
@@ -1329,5 +1333,291 @@ describe('deleteManyVocabulary Handler', () => {
 
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({ error: new Error('Invalid token') });
+    });
+});
+
+describe('createVocabulary Handler', () => {
+    let mockSupabase: any;
+    let req: any;
+    let res: any;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+
+        req = {
+            token: 'mock-jwt-token',
+            user: {
+                id: 'user-123',
+                email: 'test@example.com'
+            },
+            body: {
+                vocabulary: {
+                    originalPhrase: {
+                        text: 'Hello',
+                        localeId: 1,
+                        audioUrl: '12345.mp3'
+                    },
+                    translatedPhrase: {
+                        text: 'Hola',
+                        localeId: 2,
+                        audioUrl: '67890.mp3'
+                    },
+                    priority: 3,
+                    reviewDate: null
+                }
+            }
+        };
+
+        res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn(),
+            send: jest.fn()
+        };
+
+        const mockMove = jest.fn<() => Promise<{ error: null }>>().mockResolvedValue({ error: null });
+
+        mockSupabase = {
+            from: jest.fn().mockReturnThis(),
+            insert: jest.fn().mockReturnThis(),
+            select: jest.fn().mockReturnThis(),
+            update: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            single: jest.fn(),
+            storage: {
+                from: jest.fn().mockReturnValue({
+                    move: mockMove
+                })
+            }
+        };
+
+        mockCreateSBClient.mockReturnValue(mockSupabase);
+    });
+
+    it('should create vocabulary successfully', async () => {
+        // Mock phrase inserts - returns data with id for savePhrase
+        mockSupabase.select
+            .mockResolvedValueOnce({ data: [{ id: 101 }], error: null })  // first savePhrase
+            .mockResolvedValueOnce({ data: [{ id: 102 }], error: null })  // second savePhrase
+            .mockResolvedValueOnce({ data: [{ id: 1 }], error: null });   // saveVocabulary
+
+        // Mock final vocabulary fetch
+        const createdVocabulary = {
+            id: 1,
+            sr_stage_id: 0,
+            review_date: null,
+            priority: 3,
+            modified_at: null,
+            learned: 0,
+            original: { id: 101, text: 'Hello', audio_url: '101.mp3' },
+            translated: { id: 102, text: 'Hola', audio_url: '102.mp3' }
+        };
+
+        mockSupabase.single.mockResolvedValue({
+            data: createdVocabulary,
+            error: null
+        });
+
+        await createVocabulary(req, res);
+
+        expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.send).toHaveBeenCalledWith(createdVocabulary);
+    });
+
+    it('should handle phrase insert errors', async () => {
+        mockSupabase.select.mockRejectedValueOnce(new Error('Insert failed'));
+
+        await createVocabulary(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.send).toHaveBeenCalledWith({ error: expect.any(String) });
+    });
+
+    it('should handle vocabulary fetch error after creation', async () => {
+        // Mock phrase inserts
+        mockSupabase.select
+            .mockResolvedValueOnce({ data: [{ id: 101 }], error: null })
+            .mockResolvedValueOnce({ data: [{ id: 102 }], error: null })
+            .mockResolvedValueOnce({ data: [{ id: 1 }], error: null });
+
+        // Mock final vocabulary fetch with error
+        mockSupabase.single.mockResolvedValue({
+            data: null,
+            error: { message: 'Failed to fetch created vocabulary' }
+        });
+
+        await createVocabulary(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.send).toHaveBeenCalledWith({ error: 'Failed to fetch created vocabulary: Failed to fetch created vocabulary' });
+    });
+});
+
+describe('updateVocabulary Handler', () => {
+    let mockSupabase: any;
+    let req: any;
+    let res: any;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+
+        req = {
+            token: 'mock-jwt-token',
+            user: {
+                id: 'user-123',
+                email: 'test@example.com'
+            },
+            body: {
+                vocabulary: {
+                    vocabularyId: 1,
+                    originalPhrase: {
+                        text: 'Hello Updated',
+                        audioUrl: '101.mp3'
+                    },
+                    translatedPhrase: {
+                        text: 'Hola Updated',
+                        audioUrl: '102.mp3'
+                    },
+                    priority: 2,
+                    reviewDate: '2025-10-01'
+                }
+            }
+        };
+
+        res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn(),
+            send: jest.fn()
+        };
+
+        // Create a proper chainable mock
+        const mockMove = jest.fn<() => Promise<{ error: null }>>().mockResolvedValue({ error: null });
+        const mockRemove = jest.fn<() => Promise<{ error: null }>>().mockResolvedValue({ error: null });
+
+        mockSupabase = {
+            from: jest.fn().mockReturnThis(),
+            select: jest.fn().mockReturnThis(),
+            update: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            single: jest.fn(),
+            storage: {
+                from: jest.fn().mockReturnValue({
+                    move: mockMove,
+                    remove: mockRemove
+                })
+            }
+        };
+
+        mockCreateSBClient.mockReturnValue(mockSupabase);
+    });
+
+    it('should update vocabulary successfully', async () => {
+        // Mock existing vocabulary fetch (first single call)
+        mockSupabase.single.mockResolvedValueOnce({
+            data: {
+                phrase_id: 101,
+                translated_phrase_id: 102,
+                original: { audio_url: '101.mp3' },
+                translated: { audio_url: '102.mp3' }
+            },
+            error: null
+        });
+
+        // Mock final vocabulary fetch (second single call)
+        const updatedVocabulary = {
+            id: 1,
+            sr_stage_id: 1,
+            review_date: '2025-10-01',
+            priority: 2,
+            modified_at: null,
+            learned: 0,
+            original: { id: 101, text: 'Hello Updated', audio_url: '101.mp3' },
+            translated: { id: 102, text: 'Hola Updated', audio_url: '102.mp3' }
+        };
+
+        mockSupabase.single.mockResolvedValueOnce({
+            data: updatedVocabulary,
+            error: null
+        });
+
+        await updateVocabulary(req, res);
+
+        expect(mockCreateSBClient).toHaveBeenCalledWith('mock-jwt-token');
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.send).toHaveBeenCalledWith(updatedVocabulary);
+    });
+
+    it('should handle vocabulary not found error', async () => {
+        mockSupabase.single.mockResolvedValueOnce({
+            data: null,
+            error: { message: 'Not found' }
+        });
+
+        await updateVocabulary(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.send).toHaveBeenCalledWith({ error: 'Vocabulary not found' });
+    });
+
+    it('should handle update fetch error', async () => {
+        // Mock existing vocabulary fetch
+        mockSupabase.single.mockResolvedValueOnce({
+            data: {
+                phrase_id: 101,
+                translated_phrase_id: 102,
+                original: { audio_url: '101.mp3' },
+                translated: { audio_url: '102.mp3' }
+            },
+            error: null
+        });
+
+        // Mock final vocabulary fetch with error
+        mockSupabase.single.mockResolvedValueOnce({
+            data: null,
+            error: { message: 'Failed to fetch updated vocabulary' }
+        });
+
+        await updateVocabulary(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.send).toHaveBeenCalledWith({ error: 'Failed to fetch updated vocabulary: Failed to fetch updated vocabulary' });
+    });
+
+    it('should handle audio file rename when audio changes', async () => {
+        req.body.vocabulary.originalPhrase.audioUrl = 'new-audio.mp3';
+
+        // Mock existing vocabulary fetch
+        mockSupabase.single.mockResolvedValueOnce({
+            data: {
+                phrase_id: 101,
+                translated_phrase_id: 102,
+                original: { audio_url: '101.mp3' },
+                translated: { audio_url: '102.mp3' }
+            },
+            error: null
+        });
+
+        // Mock final vocabulary fetch
+        const updatedVocabulary = {
+            id: 1,
+            sr_stage_id: 1,
+            review_date: '2025-10-01',
+            priority: 2,
+            modified_at: null,
+            learned: 0,
+            original: { id: 101, text: 'Hello Updated', audio_url: '101.mp3' },
+            translated: { id: 102, text: 'Hola Updated', audio_url: '102.mp3' }
+        };
+
+        mockSupabase.single.mockResolvedValueOnce({
+            data: updatedVocabulary,
+            error: null
+        });
+
+        await updateVocabulary(req, res);
+
+        expect(mockSupabase.storage.from).toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.send).toHaveBeenCalledWith(updatedVocabulary);
     });
 });

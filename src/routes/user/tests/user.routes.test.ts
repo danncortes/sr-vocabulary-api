@@ -242,14 +242,11 @@ describe('User Routes', () => {
 
     describe('Login Route', () => {
         it('should allow POST requests to /login without authentication', async () => {
-            const response = await request(app)
+            await request(app)
                 .post('/user/login')
                 .send({ email: 'test@example.com', password: 'password123' });
 
-            // Login route doesn't use authenticateToken middleware
             expect(mockAuthenticateToken).not.toHaveBeenCalled();
-            // Note: We're not testing the login handler implementation here,
-            // just verifying the route is accessible
         });
 
         it('should not require authentication for login route', async () => {
@@ -258,6 +255,196 @@ describe('User Routes', () => {
                 .send({ email: 'test@example.com', password: 'password123' });
 
             expect(mockAuthenticateToken).not.toHaveBeenCalled();
+        });
+
+        it('should return MFA enrollment data for user without factors', async () => {
+            const mockMfaData = {
+                id: 'factor-123',
+                type: 'totp',
+                totp: { qr_code: 'qr-code-url', secret: 'secret-123' }
+            };
+
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    signInWithPassword: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: { user: { id: 'user-123', factors: undefined }, session: { access_token: 'token-123' } },
+                        error: null
+                    }),
+                    mfa: {
+                        enroll: jest.fn<() => Promise<any>>().mockResolvedValue({
+                            data: mockMfaData,
+                            error: null
+                        })
+                    }
+                }
+            });
+
+            const response = await request(app)
+                .post('/user/login')
+                .send({ email: 'test@example.com', password: 'password123' });
+
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual(mockMfaData);
+        });
+
+        it('should return unverified status for user with unverified factor', async () => {
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    signInWithPassword: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: {
+                            user: { id: 'user-123', factors: [{ id: 'factor-123', status: 'unverified' }] },
+                            session: { access_token: 'token-123' }
+                        },
+                        error: null
+                    }),
+                    mfa: { enroll: jest.fn(), challenge: jest.fn(), verify: jest.fn() }
+                }
+            });
+
+            const response = await request(app)
+                .post('/user/login')
+                .send({ email: 'test@example.com', password: 'password123' });
+
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual({
+                message: 'unverified',
+                factorId: 'factor-123',
+                token: 'token-123'
+            });
+        });
+
+        it('should verify MFA for user with verified factor', async () => {
+            const mockVerifiedData = { session: { access_token: 'new-token' } };
+
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    signInWithPassword: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: {
+                            user: { id: 'user-123', factors: [{ id: 'factor-123', status: 'verified' }] },
+                            session: { access_token: 'token-123' }
+                        },
+                        error: null
+                    }),
+                    mfa: {
+                        challenge: jest.fn<() => Promise<any>>().mockResolvedValue({
+                            data: { id: 'challenge-123' },
+                            error: null
+                        }),
+                        verify: jest.fn<() => Promise<any>>().mockResolvedValue({
+                            data: mockVerifiedData,
+                            error: null
+                        })
+                    }
+                }
+            });
+
+            const response = await request(app)
+                .post('/user/login')
+                .send({ email: 'test@example.com', password: 'password123', code: '123456' });
+
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual(mockVerifiedData);
+        });
+
+        it('should return 400 when login fails', async () => {
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    signInWithPassword: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: null,
+                        error: { message: 'Invalid credentials' }
+                    })
+                }
+            });
+
+            const response = await request(app)
+                .post('/user/login')
+                .send({ email: 'test@example.com', password: 'wrong-password' });
+
+            expect(response.status).toBe(400);
+            expect(response.body.error).toBe('Invalid credentials');
+        });
+
+        it('should return 400 when MFA enrollment fails', async () => {
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    signInWithPassword: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: { user: { id: 'user-123', factors: undefined }, session: { access_token: 'token-123' } },
+                        error: null
+                    }),
+                    mfa: {
+                        enroll: jest.fn<() => Promise<any>>().mockResolvedValue({
+                            data: null,
+                            error: { message: 'MFA enrollment failed' }
+                        })
+                    }
+                }
+            });
+
+            const response = await request(app)
+                .post('/user/login')
+                .send({ email: 'test@example.com', password: 'password123' });
+
+            expect(response.status).toBe(400);
+            expect(response.body.error).toBe('MFA enrollment failed');
+        });
+
+        it('should return 400 when MFA challenge fails', async () => {
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    signInWithPassword: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: {
+                            user: { id: 'user-123', factors: [{ id: 'factor-123', status: 'verified' }] },
+                            session: { access_token: 'token-123' }
+                        },
+                        error: null
+                    }),
+                    mfa: {
+                        challenge: jest.fn<() => Promise<any>>().mockResolvedValue({
+                            data: null,
+                            error: { message: 'Challenge failed' }
+                        }),
+                        verify: jest.fn()
+                    }
+                }
+            });
+
+            const response = await request(app)
+                .post('/user/login')
+                .send({ email: 'test@example.com', password: 'password123', code: '123456' });
+
+            expect(response.status).toBe(400);
+            expect(response.body.error).toBe('Challenge failed');
+        });
+
+        it('should return 400 when MFA verification fails', async () => {
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    signInWithPassword: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: {
+                            user: { id: 'user-123', factors: [{ id: 'factor-123', status: 'verified' }] },
+                            session: { access_token: 'token-123' }
+                        },
+                        error: null
+                    }),
+                    mfa: {
+                        challenge: jest.fn<() => Promise<any>>().mockResolvedValue({
+                            data: { id: 'challenge-123' },
+                            error: null
+                        }),
+                        verify: jest.fn<() => Promise<any>>().mockResolvedValue({
+                            data: null,
+                            error: { message: 'Invalid code' }
+                        })
+                    }
+                }
+            });
+
+            const response = await request(app)
+                .post('/user/login')
+                .send({ email: 'test@example.com', password: 'password123', code: 'wrong-code' });
+
+            expect(response.status).toBe(400);
+            expect(response.body.error).toBe('Invalid code');
         });
     });
 });

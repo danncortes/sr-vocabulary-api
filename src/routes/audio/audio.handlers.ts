@@ -95,7 +95,6 @@ const generateSpeech = async (text: string): Promise<Buffer> => {
 }
 
 const saveAudio = async (audio: Buffer, id: number, bucketName: string = process.env.SUPABASE_BUCKET || '') => {
-
     try {
         const audioName = `${id}.mp3`;
 

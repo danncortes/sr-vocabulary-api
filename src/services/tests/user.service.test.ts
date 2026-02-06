@@ -108,7 +108,9 @@ describe('User Settings Service', () => {
             expect(mockCreateSBClient).toHaveBeenCalledWith(mockToken);
             expect(mockSupabase.auth.getUser).toHaveBeenCalled();
             expect(mockSupabase.from).toHaveBeenCalledWith('user_settings');
-            expect(mockSupabase.select).toHaveBeenCalledWith('*');
+            expect(mockSupabase.select).toHaveBeenCalledWith(`system_lang:languages!system_lang_id(id, locale_code),
+            learning_lang:languages!learning_lang_id(id, locale_code),
+            origin_lang:languages!origin_lang_id(id, locale_code)`);
             expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', mockUser.id);
             expect(result).toEqual(mockUserSettings);
         });
