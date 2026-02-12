@@ -314,8 +314,6 @@ describe('User Routes', () => {
         });
 
         it('should verify MFA for user with verified factor', async () => {
-            const mockVerifiedData = { session: { access_token: 'new-token' } };
-
             mockCreateSBClient.mockReturnValue({
                 auth: {
                     signInWithPassword: jest.fn<() => Promise<any>>().mockResolvedValue({
@@ -331,7 +329,7 @@ describe('User Routes', () => {
                             error: null
                         }),
                         verify: jest.fn<() => Promise<any>>().mockResolvedValue({
-                            data: mockVerifiedData,
+                            data: { access_token: 'new-token', refresh_token: 'new-refresh-token' },
                             error: null
                         })
                     }
@@ -343,7 +341,10 @@ describe('User Routes', () => {
                 .send({ email: 'test@example.com', password: 'password123', code: '123456' });
 
             expect(response.status).toBe(200);
-            expect(response.body).toEqual(mockVerifiedData);
+            expect(response.body).toEqual({
+                access_token: 'new-token',
+                refresh_token: 'new-refresh-token'
+            });
         });
 
         it('should return 400 when login fails', async () => {
@@ -445,6 +446,107 @@ describe('User Routes', () => {
 
             expect(response.status).toBe(400);
             expect(response.body.error).toBe('Invalid code');
+        });
+
+        it('should return access_token and refresh_token on successful MFA verification', async () => {
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    signInWithPassword: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: {
+                            user: { id: 'user-123', factors: [{ id: 'factor-123', status: 'verified' }] },
+                            session: { access_token: 'token-123' }
+                        },
+                        error: null
+                    }),
+                    mfa: {
+                        challenge: jest.fn<() => Promise<any>>().mockResolvedValue({
+                            data: { id: 'challenge-123' },
+                            error: null
+                        }),
+                        verify: jest.fn<() => Promise<any>>().mockResolvedValue({
+                            data: { access_token: 'new-access-token', refresh_token: 'new-refresh-token' },
+                            error: null
+                        })
+                    }
+                }
+            });
+
+            const response = await request(app)
+                .post('/user/login')
+                .send({ email: 'test@example.com', password: 'password123', code: '123456' });
+
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual({
+                access_token: 'new-access-token',
+                refresh_token: 'new-refresh-token'
+            });
+        });
+    });
+
+    describe('Refresh Token Route', () => {
+        it('should allow POST requests to /refresh without authentication', async () => {
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    refreshSession: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: { session: { access_token: 'new-token', refresh_token: 'new-refresh' } },
+                        error: null
+                    })
+                }
+            });
+
+            await request(app)
+                .post('/user/refresh')
+                .send({ refresh_token: 'valid-refresh-token' });
+
+            expect(mockAuthenticateToken).not.toHaveBeenCalled();
+        });
+
+        it('should return 400 when refresh_token is not provided', async () => {
+            const response = await request(app)
+                .post('/user/refresh')
+                .send({});
+
+            expect(response.status).toBe(400);
+            expect(response.body.error).toBe('Refresh token is required');
+        });
+
+        it('should return new tokens on successful refresh', async () => {
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    refreshSession: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: { session: { access_token: 'new-access-token', refresh_token: 'new-refresh-token' } },
+                        error: null
+                    })
+                }
+            });
+
+            const response = await request(app)
+                .post('/user/refresh')
+                .send({ refresh_token: 'valid-refresh-token' });
+
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual({
+                access_token: 'new-access-token',
+                refresh_token: 'new-refresh-token'
+            });
+        });
+
+        it('should return 401 when refresh fails', async () => {
+            mockCreateSBClient.mockReturnValue({
+                auth: {
+                    refreshSession: jest.fn<() => Promise<any>>().mockResolvedValue({
+                        data: null,
+                        error: { message: 'Invalid refresh token' }
+                    })
+                }
+            });
+
+            const response = await request(app)
+                .post('/user/refresh')
+                .send({ refresh_token: 'invalid-refresh-token' });
+
+            expect(response.status).toBe(401);
+            expect(response.body.error).toBe('Invalid refresh token');
         });
     });
 });
