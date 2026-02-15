@@ -48,8 +48,6 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
             .eq('user_id', user.id)
             .not('original', 'is', null)
             .not('translated', 'is', null)
-            .not('original.audio_url', 'is', null)
-            .not('translated.audio_url', 'is', null)
             .order('priority', { ascending: true })
             .order('review_date', { ascending: true })
             .order('id', { ascending: true });

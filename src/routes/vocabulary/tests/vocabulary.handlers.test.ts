@@ -128,8 +128,6 @@ describe('getAllVocabulary Handler', () => {
             mockSupabase.not
                 .mockReturnValueOnce(mockSupabase) // not('original', 'is', null)
                 .mockReturnValueOnce(mockSupabase) // not('translated', 'is', null)
-                .mockReturnValueOnce(mockSupabase) // not('original.audio_url', 'is', null)
-                .mockReturnValueOnce(mockSupabase); // not('translated.audio_url', 'is', null)
             mockSupabase.order
                 .mockReturnValueOnce(mockSupabase)  // First call: order('priority')
                 .mockReturnValueOnce(mockSupabase)  // Second call: order('review_date')
@@ -163,7 +161,7 @@ describe('getAllVocabulary Handler', () => {
             )
         `);
             expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', 'user-123');
-            expect(mockSupabase.not).toHaveBeenCalledTimes(4);
+            expect(mockSupabase.not).toHaveBeenCalledTimes(2);
             expect(mockSupabase.order).toHaveBeenNthCalledWith(1, 'priority', { ascending: true });
             expect(mockSupabase.order).toHaveBeenNthCalledWith(2, 'review_date', { ascending: true });
             expect(mockSupabase.order).toHaveBeenNthCalledWith(3, 'id', { ascending: true });
@@ -175,8 +173,6 @@ describe('getAllVocabulary Handler', () => {
             // Setup mock chain that fails at the end
             mockSupabase.eq.mockReturnValueOnce(mockSupabase);
             mockSupabase.not
-                .mockReturnValueOnce(mockSupabase)
-                .mockReturnValueOnce(mockSupabase)
                 .mockReturnValueOnce(mockSupabase)
                 .mockReturnValueOnce(mockSupabase);
             mockSupabase.order
