@@ -1,6 +1,7 @@
 import path from "path";
 import fs, { writeFileSync } from "fs";
 import { SupabaseClient } from "@supabase/supabase-js";
+import Groq from "groq-sdk";
 import { createSBClient } from "../../supabaseClient.js";
 import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
 import {
@@ -16,7 +17,7 @@ import { getUserReviewDays } from "../../services/review-days.service.js";
 import { getUserLearnDays } from "../../services/learn-days.service.js";
 import { getUserFromToken, getUserSettings } from "../../services/user.service.js";
 
-let supabaseClientTemp: SupabaseClient<any, string, any> | null
+let supabaseClientTemp: SupabaseClient<any, string, any> | null;
 
 export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     try {
@@ -606,5 +607,44 @@ export const updateVocabulary = async (req: any, res: any) => {
         res.status(400).send({ error: error.message });
     } finally {
         supabaseClientTemp = null;
+    }
+}
+
+export const generatePhrase = async (req: any, res: any): Promise<any> => {
+    try {
+        const { text, locale } = req.body;
+
+        if (!text || !locale) {
+            return res.status(400).json({
+                error: 'Missing required fields: text, locale'
+            });
+        }
+
+        const groqApiKey = process.env.GROQ_API_KEY;
+
+        if (!groqApiKey) {
+            return res.status(500).json({ error: 'Groq API key not configured' });
+        }
+
+        const groq = new Groq({ apiKey: groqApiKey });
+
+        const prompt = `Generate a phrase in ${locale} with around 50-60 characters using the word or phrase: "${text}". Only return the generated phrase, nothing else.`;
+
+        const completion = await groq.chat.completions.create({
+            messages: [
+                {
+                    role: "user",
+                    content: prompt
+                }
+            ],
+            model: "llama-3.3-70b-versatile",
+        });
+
+        const generatedPhrase = completion.choices[0]?.message?.content?.trim() || '';
+
+        return res.status(200).json({ generatedPhrase });
+    } catch (error: any) {
+        console.error('Phrase generation error:', error);
+        return res.status(500).json({ error: error.message || 'Phrase generation failed' });
     }
 }

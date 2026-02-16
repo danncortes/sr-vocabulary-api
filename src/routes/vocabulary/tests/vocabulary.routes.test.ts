@@ -14,6 +14,7 @@ const mockRestartManyVocabulary = jest.fn() as jest.MockedFunction<RequestHandle
 const mockDeleteManyVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
 const mockCreateVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
 const mockUpdateVocabulary = jest.fn() as jest.MockedFunction<RequestHandler>;
+const mockGeneratePhrase = jest.fn() as jest.MockedFunction<RequestHandler>;
 
 
 
@@ -31,6 +32,7 @@ jest.unstable_mockModule('../vocabulary.handlers.js', () => ({
     deleteManyVocabulary: mockDeleteManyVocabulary,
     createVocabulary: mockCreateVocabulary,
     updateVocabulary: mockUpdateVocabulary,
+    generatePhrase: mockGeneratePhrase,
 }));
 
 // Mock the auth middleware
@@ -51,7 +53,8 @@ jest.unstable_mockModule('../vocabulary.handlers.js', () => ({
     loadTranslatedVocabulary: jest.fn(),
     deleteManyVocabulary: jest.fn(),
     createVocabulary: jest.fn(),
-    updateVocabulary: jest.fn()
+    updateVocabulary: jest.fn(),
+    generatePhrase: jest.fn()
 }));
 
 describe('Vocabulary Routes', () => {
@@ -110,6 +113,10 @@ describe('Vocabulary Routes', () => {
 
         mockUpdateVocabulary.mockImplementation((req, res) => {
             res.status(200).json({ message: 'updateVocabulary called' });
+        });
+
+        mockGeneratePhrase.mockImplementation((req, res) => {
+            res.status(200).json({ message: 'generatePhrase called' });
         });
     });
 
@@ -212,6 +219,17 @@ describe('Vocabulary Routes', () => {
             expect(mockAuthenticateToken).toHaveBeenCalledTimes(1);
             expect(mockUpdateVocabulary).toHaveBeenCalledTimes(1);
         });
+
+        it('should call generatePhrase handler for POST /generate with valid token', async () => {
+            await request(app)
+                .post('/vocabulary/generate')
+                .set('Authorization', validToken)
+                .send({ text: 'hello', locale: 'German' })
+                .expect(200);
+
+            expect(mockAuthenticateToken).toHaveBeenCalledTimes(1);
+            expect(mockGeneratePhrase).toHaveBeenCalledTimes(1);
+        });
     });
 
     describe('Authentication Middleware Tests', () => {
@@ -227,6 +245,7 @@ describe('Vocabulary Routes', () => {
                 { method: 'post', path: '/vocabulary/delete' },
                 { method: 'post', path: '/vocabulary/create' },
                 { method: 'post', path: '/vocabulary/update' },
+                { method: 'post', path: '/vocabulary/generate' },
             ];
 
             for (const route of routes) {
@@ -286,6 +305,7 @@ describe('Vocabulary Routes', () => {
             await request(app).post('/vocabulary/delete').set('Authorization', validToken).send({});
             await request(app).post('/vocabulary/create').set('Authorization', validToken).send({});
             await request(app).post('/vocabulary/update').set('Authorization', validToken).send({});
+            await request(app).post('/vocabulary/generate').set('Authorization', validToken).send({});
 
             // Verify each handler was called exactly once
             expect(mockGetAllVocabulary).toHaveBeenCalledTimes(1);
@@ -297,9 +317,10 @@ describe('Vocabulary Routes', () => {
             expect(mockDeleteManyVocabulary).toHaveBeenCalledTimes(1);
             expect(mockCreateVocabulary).toHaveBeenCalledTimes(1);
             expect(mockUpdateVocabulary).toHaveBeenCalledTimes(1);
+            expect(mockGeneratePhrase).toHaveBeenCalledTimes(1);
 
             // Verify authentication middleware was called for each route
-            expect(mockAuthenticateToken).toHaveBeenCalledTimes(9);
+            expect(mockAuthenticateToken).toHaveBeenCalledTimes(10);
         });
     });
 

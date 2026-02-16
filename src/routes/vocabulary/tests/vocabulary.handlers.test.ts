@@ -23,6 +23,18 @@ jest.unstable_mockModule('fs', () => ({
     writeFileSync: jest.fn()
 }));
 
+// Mock the groq-sdk module
+const mockGroqCreate = jest.fn();
+jest.unstable_mockModule('groq-sdk', () => ({
+    default: jest.fn().mockImplementation(() => ({
+        chat: {
+            completions: {
+                create: mockGroqCreate
+            }
+        }
+    }))
+}));
+
 const fs = await import('fs');
 
 // Mock the supabaseClient module using unstable_mockModule
@@ -76,7 +88,8 @@ const {
     loadTranslatedVocabulary,
     deleteManyVocabulary,
     createVocabulary,
-    updateVocabulary
+    updateVocabulary,
+    generatePhrase
 } = await import('../vocabulary.handlers.js');
 const { getVocabularyById, getManyVocabulary, delayVocabulary, resetVocabulary, restartVocabulary, deleteVocabulary } = await import('../../../services/vocabulary.service.js');
 const { getStageById } = await import('../../../services/stages.service.js');
@@ -1615,5 +1628,121 @@ describe('updateVocabulary Handler', () => {
         expect(mockSupabase.storage.from).toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.send).toHaveBeenCalledWith(updatedVocabulary);
+    });
+});
+
+describe('generatePhrase Handler', () => {
+    let req: any;
+    let res: any;
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+
+        process.env = { ...originalEnv, GROQ_API_KEY: 'test-groq-api-key' };
+
+        req = {
+            token: 'mock-jwt-token',
+            user: {
+                id: 'user-123',
+                email: 'test@example.com'
+            },
+            body: {
+                text: 'hello',
+                locale: 'German'
+            }
+        };
+
+        res = {
+            status: jest.fn().mockReturnThis(),
+            json: jest.fn()
+        };
+    });
+
+    afterEach(() => {
+        process.env = originalEnv;
+    });
+
+    it('should generate a phrase successfully', async () => {
+        const mockGeneratedPhrase = 'Hallo, wie geht es dir heute?';
+
+        mockGroqCreate.mockResolvedValue({
+            choices: [{
+                message: {
+                    content: mockGeneratedPhrase
+                }
+            }]
+        });
+
+        await generatePhrase(req, res);
+
+        expect(mockGroqCreate).toHaveBeenCalledWith({
+            messages: [{
+                role: 'user',
+                content: 'Generate a phrase in German with around 50-60 characters using the word or phrase: "hello". Only return the generated phrase, nothing else.'
+            }],
+            model: 'llama-3.3-70b-versatile'
+        });
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith({ generatedPhrase: mockGeneratedPhrase });
+    });
+
+    it('should return 400 when text is missing', async () => {
+        req.body = { locale: 'German' };
+
+        await generatePhrase(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+            error: 'Missing required fields: text, locale'
+        });
+    });
+
+    it('should return 400 when locale is missing', async () => {
+        req.body = { text: 'hello' };
+
+        await generatePhrase(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+            error: 'Missing required fields: text, locale'
+        });
+    });
+
+    it('should return 500 when GROQ_API_KEY is not configured', async () => {
+        delete process.env.GROQ_API_KEY;
+
+        await generatePhrase(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({
+            error: 'Groq API key not configured'
+        });
+    });
+
+    it('should handle Groq API errors', async () => {
+        mockGroqCreate.mockRejectedValue(new Error('API rate limit exceeded'));
+
+        await generatePhrase(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(res.json).toHaveBeenCalledWith({
+            error: 'API rate limit exceeded'
+        });
+    });
+
+    it('should handle empty response from Groq', async () => {
+        mockGroqCreate.mockResolvedValue({
+            choices: [{
+                message: {
+                    content: null
+                }
+            }]
+        });
+
+        await generatePhrase(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith({ generatedPhrase: '' });
     });
 });
