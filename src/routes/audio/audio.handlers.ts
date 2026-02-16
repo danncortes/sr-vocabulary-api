@@ -144,7 +144,6 @@ export const generateAudioPhrases = async (req: any, res: any) => {
 
         const savedAudios = []
 
-        console.log("🚀 ~ generateAudioPhrases ~ data:", data![1])
         if (data) {
             for await (const phrase of data) {
                 const { original, translated } = phrase;

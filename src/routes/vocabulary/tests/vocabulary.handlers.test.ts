@@ -24,7 +24,7 @@ jest.unstable_mockModule('fs', () => ({
 }));
 
 // Mock the groq-sdk module
-const mockGroqCreate = jest.fn();
+const mockGroqCreate = jest.fn<(...args: any[]) => Promise<any>>();
 jest.unstable_mockModule('groq-sdk', () => ({
     default: jest.fn().mockImplementation(() => ({
         chat: {

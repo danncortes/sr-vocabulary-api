@@ -397,8 +397,6 @@ describe('generateAudioPhrases Handler', () => {
     });
 
     it('should handle database query errors', async () => {
-        // Note: The handler has a bug where it accesses data![1] before checking for errors
-        // This causes a TypeError when data is null, which is caught by the try/catch
         mockSupabase.order.mockResolvedValue({
             data: null,
             error: { message: 'Database error' }
@@ -407,7 +405,7 @@ describe('generateAudioPhrases Handler', () => {
         await generateAudioPhrases(req, res);
 
         expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ error: expect.any(TypeError) });
+        expect(res.json).toHaveBeenCalledWith({ error: 'Database error' });
     });
 
     it('should generate audio for phrases successfully', async () => {
