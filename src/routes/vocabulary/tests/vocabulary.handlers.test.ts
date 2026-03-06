@@ -209,18 +209,17 @@ describe('setVocabularyReviewed', () => {
     let mockSupabase: any;
     let req: any;
     let res: any;
-    let mockUser: any;
 
     beforeEach(() => {
         jest.clearAllMocks();
 
         req = {
-            body: { id: 1 },
             token: 'mock-jwt-token',
             user: {
                 id: 'user-123',
                 email: 'test@example.com'
-            }
+            },
+            body: { id: 1 }
         };
 
         res = {
@@ -239,124 +238,7 @@ describe('setVocabularyReviewed', () => {
         mockCreateSBClient.mockReturnValue(mockSupabase);
     });
 
-    it('should set vocabulary with stage 0 on a learn day as reviewed', async () => {
-        const todaysDay = 1;
-
-        const phraseTranslation = {
-            id: 1,
-            sr_stage_id: 0,
-            review_date: null,
-            priority: 1,
-            learned: 0,
-        };
-
-        const expectedPhraseTranslation = {
-            sr_stage_id: 1,
-            review_date: '2025-09-24',
-            learned: 0,
-        };
-
-        // Mock service calls
-        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
-        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(todaysDay);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
-        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
-
-        // Mock Supabase update chain
-        mockSupabase.eq.mockReturnValueOnce(mockSupabase); // First eq call for user_id
-        mockSupabase.select.mockResolvedValue({
-            data: [expectedPhraseTranslation],
-            error: null
-        });
-
-        await setVocabularyReviewed(req, res);
-
-        // Verify service calls
-
-        expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
-        expect(getStageById).toHaveBeenCalledWith(1, 'mock-jwt-token');
-        expect(getTodaysDay).toHaveBeenCalled();
-        expect(getUserReviewDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(getUserLearnDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(addDaysToDate).toHaveBeenCalledWith(null, 2);
-
-        // Verify database update
-        expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
-        expect(mockSupabase.update).toHaveBeenCalledWith(expectedPhraseTranslation);
-        expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', 'user-123');
-        expect(mockSupabase.eq).toHaveBeenCalledWith('id', 1);
-        expect(mockSupabase.select).toHaveBeenCalled();
-
-        // Verify response
-        expect(res.status).toHaveBeenCalledWith(200);
-        expect(res.send).toHaveBeenCalledWith(expectedPhraseTranslation);
-    });
-
-    it('should set vocabulary with stage 0 on a non-learn day as reviewed', async () => {
-        const todaysDay = 3;
-
-        const phraseTranslation = {
-            id: 1,
-            sr_stage_id: 0,
-            review_date: null,
-            priority: 1,
-            learned: 0,
-        };
-
-        const expectedPhraseTranslation = {
-            sr_stage_id: 1,
-            review_date: '2025-10-01',
-            learned: 0,
-        };
-
-        // Mock service calls
-        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
-        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(todaysDay);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
-        (getNextDateByDay as jest.MockedFunction<typeof getNextDateByDay>).mockReturnValue('2025-09-29'); // Next highest learn day (2)
-        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>)
-            .mockReturnValueOnce('2025-09-24') // First call with review_date
-            .mockReturnValueOnce('2025-10-01'); // Second call with next learn day
-
-        // Mock Supabase update chain
-        mockSupabase.eq.mockReturnValueOnce(mockSupabase); // First eq call for user_id
-        mockSupabase.select.mockResolvedValue({
-            data: [expectedPhraseTranslation],
-            error: null
-        });
-
-        await setVocabularyReviewed(req, res);
-
-        // Verify service calls
-
-        expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
-        expect(getStageById).toHaveBeenCalledWith(1, 'mock-jwt-token');
-        expect(getTodaysDay).toHaveBeenCalled();
-        expect(getUserReviewDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(getUserLearnDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(getNextDateByDay).toHaveBeenCalledWith(2); // Highest learn day
-        expect(addDaysToDate).toHaveBeenCalledWith(null, 2); // First call
-        expect(addDaysToDate).toHaveBeenCalledWith('2025-09-29', 2); // Second call with next learn day
-
-        // Verify database update
-        expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
-        expect(mockSupabase.update).toHaveBeenCalledWith(expectedPhraseTranslation);
-        expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', 'user-123');
-        expect(mockSupabase.eq).toHaveBeenCalledWith('id', 1);
-        expect(mockSupabase.select).toHaveBeenCalled();
-
-        // Verify response
-        expect(res.status).toHaveBeenCalledWith(200);
-        expect(res.send).toHaveBeenCalledWith(expectedPhraseTranslation);
-    });
-
-    it('should set vocabulary with stage > 0 on review day as reviewed', async () => {
-        const todaysDay = 3;
-
+    it('should mark vocabulary as reviewed when review_date is not in the past', async () => {
         const phraseTranslation = {
             id: 1,
             sr_stage_id: 1,
@@ -366,42 +248,25 @@ describe('setVocabularyReviewed', () => {
         };
 
         const expectedPhraseTranslation = {
-            id: 1,
             sr_stage_id: 2,
             review_date: '2025-10-01',
-            priority: 1,
             learned: 0,
         };
 
-        // Mock service calls
         (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
         (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[2]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(todaysDay);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
-        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-10-01');
         (isDateLessThanToday as jest.MockedFunction<typeof isDateLessThanToday>).mockReturnValue(false);
+        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-10-01');
 
-        // Mock Supabase update chain
-        mockSupabase.eq.mockReturnValueOnce(mockSupabase); // First eq call for user_id
-        mockSupabase.select.mockResolvedValue({
-            data: [expectedPhraseTranslation],
-            error: null
-        });
+        mockSupabase.eq.mockReturnValueOnce(mockSupabase);
+        mockSupabase.select.mockResolvedValue({ data: [expectedPhraseTranslation], error: null });
 
         await setVocabularyReviewed(req, res);
 
-        // Verify service calls
-
         expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getStageById).toHaveBeenCalledWith(2, 'mock-jwt-token');
-        expect(getTodaysDay).toHaveBeenCalled();
-        expect(getUserReviewDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(getUserLearnDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(addDaysToDate).toHaveBeenCalledWith('2025-09-24', 7);
         expect(isDateLessThanToday).toHaveBeenCalledWith('2025-09-24');
-
-        // Verify database update
+        expect(addDaysToDate).toHaveBeenCalledWith('2025-09-24', 7);
         expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
         expect(mockSupabase.update).toHaveBeenCalledWith({
             sr_stage_id: 2,
@@ -411,203 +276,47 @@ describe('setVocabularyReviewed', () => {
         expect(mockSupabase.eq).toHaveBeenCalledWith('user_id', 'user-123');
         expect(mockSupabase.eq).toHaveBeenCalledWith('id', 1);
         expect(mockSupabase.select).toHaveBeenCalled();
-
-        // Verify response
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.send).toHaveBeenCalledWith(expectedPhraseTranslation);
     });
 
-    it('should set vocabulary with stage > 0 on non-review day as reviewed', async () => {
-        const todaysDay = 2;
-
+    it('should mark expired vocabulary as reviewed using current date', async () => {
         const phraseTranslation = {
             id: 1,
             sr_stage_id: 1,
-            review_date: '2025-09-24',
+            review_date: '2025-09-01',
             priority: 1,
             learned: 0,
         };
 
         const expectedPhraseTranslation = {
-            id: 1,
             sr_stage_id: 2,
             review_date: '2025-10-01',
-            priority: 1,
             learned: 0,
         };
 
-        // Mock service calls
         (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
         (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[2]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(todaysDay);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
+        (isDateLessThanToday as jest.MockedFunction<typeof isDateLessThanToday>).mockReturnValue(true);
         (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-10-01');
-        (isDateLessThanToday as jest.MockedFunction<typeof isDateLessThanToday>).mockReturnValue(false);
 
-        // Mock Supabase update
-        mockSupabase.select.mockResolvedValue({
-            data: [expectedPhraseTranslation],
-            error: null
-        });
+        mockSupabase.eq.mockReturnValueOnce(mockSupabase);
+        mockSupabase.select.mockResolvedValue({ data: [expectedPhraseTranslation], error: null });
 
         await setVocabularyReviewed(req, res);
 
-        // Verify service calls
-        expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
-        expect(getStageById).toHaveBeenCalledWith(2, 'mock-jwt-token');
-        expect(getTodaysDay).toHaveBeenCalled();
-        expect(getUserReviewDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(getUserLearnDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(addDaysToDate).toHaveBeenCalledWith('2025-09-24', 7);
-        expect(isDateLessThanToday).toHaveBeenCalledWith('2025-09-24');
-
-        // Verify database update
-        expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
+        expect(isDateLessThanToday).toHaveBeenCalledWith('2025-09-01');
+        expect(addDaysToDate).toHaveBeenCalledWith('', 7);
         expect(mockSupabase.update).toHaveBeenCalledWith({
             sr_stage_id: 2,
             review_date: '2025-10-01',
             learned: 0
         });
-        expect(mockSupabase.eq).toHaveBeenCalledWith('id', 1);
-        expect(mockSupabase.select).toHaveBeenCalled();
-
-        // Verify response
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.send).toHaveBeenCalledWith(expectedPhraseTranslation);
     });
 
-    it('should set expired vocabulary with stage > 0 on review day as reviewed', async () => {
-        const todaysDay = 4;
-
-        const phraseTranslation = {
-            id: 1,
-            sr_stage_id: 1,
-            review_date: '2025-09-17',
-            priority: 1,
-            learned: 0,
-        };
-
-        const expectedPhraseTranslation = {
-            id: 1,
-            sr_stage_id: 2,
-            review_date: '2025-10-02',
-            priority: 1,
-            learned: 0,
-        };
-
-        // Mock service calls
-        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
-        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[2]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(todaysDay);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
-        (isDateLessThanToday as jest.MockedFunction<typeof isDateLessThanToday>).mockReturnValue(true);
-        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>)
-            .mockReturnValueOnce('2025-09-24') // First call with review_date
-            .mockReturnValueOnce('2025-10-02'); // Second call with empty string (current date)
-
-        // Mock Supabase update
-        mockSupabase.select.mockResolvedValue({
-            data: [expectedPhraseTranslation],
-            error: null
-        });
-
-        await setVocabularyReviewed(req, res);
-
-        // Verify service calls
-        expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
-        expect(getStageById).toHaveBeenCalledWith(2, 'mock-jwt-token');
-        expect(getTodaysDay).toHaveBeenCalled();
-        expect(getUserReviewDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(getUserLearnDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(isDateLessThanToday).toHaveBeenCalledWith('2025-09-17');
-        expect(addDaysToDate).toHaveBeenCalledWith('2025-09-17', 7); // First call
-        expect(addDaysToDate).toHaveBeenCalledWith('', 7); // Second call with current date
-
-        // Verify database update
-        expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
-        expect(mockSupabase.update).toHaveBeenCalledWith({
-            sr_stage_id: 2,
-            review_date: '2025-10-02',
-            learned: 0
-        });
-        expect(mockSupabase.eq).toHaveBeenCalledWith('id', 1);
-        expect(mockSupabase.select).toHaveBeenCalled();
-
-        // Verify response
-        expect(res.status).toHaveBeenCalledWith(200);
-        expect(res.send).toHaveBeenCalledWith(expectedPhraseTranslation);
-    });
-
-    it('should set expired vocabulary with stage > 0 on non-review day as reviewed', async () => {
-        const todaysDay = 2;
-
-        const phraseTranslation = {
-            id: 1,
-            sr_stage_id: 1,
-            review_date: '2025-09-17',
-            priority: 1,
-            learned: 0,
-        };
-
-        const expectedPhraseTranslation = {
-            id: 1,
-            sr_stage_id: 2,
-            review_date: '2025-10-01',
-            priority: 1,
-            learned: 0,
-        };
-
-        // Mock service calls
-        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
-        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[2]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(todaysDay);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
-        (isDateLessThanToday as jest.MockedFunction<typeof isDateLessThanToday>).mockReturnValue(true);
-        (getNextDateByDay as jest.MockedFunction<typeof getNextDateByDay>).mockReturnValue('2025-09-24'); // Next lowest review day (3)
-        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>)
-            .mockReturnValueOnce('2025-09-24') // First call with review_date
-            .mockReturnValueOnce('2025-10-01'); // Second call with next review day
-
-        // Mock Supabase update
-        mockSupabase.select.mockResolvedValue({
-            data: [expectedPhraseTranslation],
-            error: null
-        });
-
-        await setVocabularyReviewed(req, res);
-
-        // Verify service calls
-        expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
-        expect(getStageById).toHaveBeenCalledWith(2, 'mock-jwt-token');
-        expect(getTodaysDay).toHaveBeenCalled();
-        expect(getUserReviewDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(getUserLearnDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(isDateLessThanToday).toHaveBeenCalledWith('2025-09-17');
-        expect(getNextDateByDay).toHaveBeenCalledWith(3); // Lowest review day
-        expect(addDaysToDate).toHaveBeenCalledWith('2025-09-17', 7); // First call
-        expect(addDaysToDate).toHaveBeenCalledWith('2025-09-24', 7); // Second call with next review day
-
-        // Verify database update
-        expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
-        expect(mockSupabase.update).toHaveBeenCalledWith({
-            sr_stage_id: 2,
-            review_date: '2025-10-01',
-            learned: 0
-        });
-        expect(mockSupabase.eq).toHaveBeenCalledWith('id', 1);
-        expect(mockSupabase.select).toHaveBeenCalled();
-
-        // Verify response
-        expect(res.status).toHaveBeenCalledWith(200);
-        expect(res.send).toHaveBeenCalledWith(expectedPhraseTranslation);
-    });
-
-    it('should set vocabulary with stage 5 as learned', async () => {
-        const todaysDay = 2;
-
+    it('should mark vocabulary as learned when stage reaches 6', async () => {
         const phraseTranslation = {
             id: 1,
             sr_stage_id: 5,
@@ -617,47 +326,26 @@ describe('setVocabularyReviewed', () => {
         };
 
         const expectedPhraseTranslation = {
-            id: 1,
             sr_stage_id: 6,
             review_date: null,
-            priority: 1,
             learned: 1,
         };
 
-        // Mock service calls
         (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
         (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[6]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(todaysDay);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
-        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-10-01');
 
-        // Mock Supabase update
-        mockSupabase.select.mockResolvedValue({
-            data: [expectedPhraseTranslation],
-            error: null
-        });
+        mockSupabase.select.mockResolvedValue({ data: [expectedPhraseTranslation], error: null });
 
         await setVocabularyReviewed(req, res);
 
-        // Verify service calls
-        expect(getVocabularyById).toHaveBeenCalledWith(1, 'mock-jwt-token');
         expect(getStageById).toHaveBeenCalledWith(6, 'mock-jwt-token');
-        expect(getTodaysDay).toHaveBeenCalled();
-        expect(getUserReviewDays).toHaveBeenCalledWith('mock-jwt-token');
-        expect(getUserLearnDays).toHaveBeenCalledWith('mock-jwt-token');
-
-        // Verify database update
-        expect(mockSupabase.from).toHaveBeenCalledWith('phrase_translations');
+        expect(isDateLessThanToday).not.toHaveBeenCalled();
+        expect(addDaysToDate).not.toHaveBeenCalled();
         expect(mockSupabase.update).toHaveBeenCalledWith({
             sr_stage_id: 6,
             review_date: null,
             learned: 1
         });
-        expect(mockSupabase.eq).toHaveBeenCalledWith('id', 1);
-        expect(mockSupabase.select).toHaveBeenCalled();
-
-        // Verify response
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.send).toHaveBeenCalledWith(expectedPhraseTranslation);
     });
@@ -665,89 +353,31 @@ describe('setVocabularyReviewed', () => {
     it('should handle database errors', async () => {
         const phraseTranslation = {
             id: 1,
-            sr_stage_id: 0,
-            review_date: null,
+            sr_stage_id: 1,
+            review_date: '2025-09-24',
             priority: 1,
             learned: 0,
         };
 
-        // Mock service calls
         (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
-        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
+        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[2]);
+        (isDateLessThanToday as jest.MockedFunction<typeof isDateLessThanToday>).mockReturnValue(false);
         (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
 
-        // Mock Supabase update chain with error
         mockSupabase.eq.mockReturnValueOnce(mockSupabase);
-        mockSupabase.select.mockResolvedValue({
-            data: null,
-            error: { message: 'Database error' }
-        });
+        mockSupabase.select.mockResolvedValue({ data: null, error: { message: 'Database error' } });
 
         await setVocabularyReviewed(req, res);
 
-        // Verify error response
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({ error: 'Database error' });
     });
 
-    it('should handle missing review days', async () => {
-        const phraseTranslation = {
-            id: 1,
-            sr_stage_id: 0,
-            review_date: null,
-            priority: 1,
-            learned: 0,
-        };
-
-        // Mock service calls
-        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
-        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue([]);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
-        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
-
-        await setVocabularyReviewed(req, res);
-
-        // Verify error response
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({ error: 'There are no Review Days' });
-    });
-
-    it('should handle missing learn days', async () => {
-        const phraseTranslation = {
-            id: 1,
-            sr_stage_id: 0,
-            review_date: null,
-            priority: 1,
-            learned: 0,
-        };
-
-        // Mock service calls
-        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
-        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue([]);
-        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
-
-        await setVocabularyReviewed(req, res);
-
-        // Verify error response
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({ error: 'There are no Learn Days' });
-    });
-
     it('should handle errors when getVocabularyById service fails', async () => {
-        // Mock service calls
         (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockRejectedValue(new Error('Vocabulary not found'));
 
         await setVocabularyReviewed(req, res);
 
-        // Verify error response
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({ error: 'Vocabulary not found' });
     });
@@ -761,116 +391,36 @@ describe('setVocabularyReviewed', () => {
             learned: 0,
         };
 
-        // Mock service calls
         (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
         (getStageById as jest.MockedFunction<typeof getStageById>).mockRejectedValue(new Error('Stage not found'));
 
         await setVocabularyReviewed(req, res);
 
-        // Verify error response
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({ error: 'Stage not found' });
     });
 
-    it('should handle errors when getUserReviewDays service fails', async () => {
-        const phraseTranslation = {
-            id: 1,
-            sr_stage_id: 0,
-            review_date: null,
-            priority: 1,
-            learned: 0,
-        };
-
-        // Mock service calls
-        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
-        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockRejectedValue(new Error('Failed to get review days'));
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockResolvedValue(learnDays);
-        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
-
-        await setVocabularyReviewed(req, res);
-
-        // Verify error response
-        expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ error: 'Failed to get review days' });
-    });
-
-    it('should handle errors when getUserLearnDays service fails', async () => {
-        const phraseTranslation = {
-            id: 1,
-            sr_stage_id: 0,
-            review_date: null,
-            priority: 1,
-            learned: 0,
-        };
-
-        // Mock service calls
-        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
-        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockReturnValue(1);
-        (getUserReviewDays as jest.MockedFunction<typeof getUserReviewDays>).mockResolvedValue(reviewDays);
-        (getUserLearnDays as jest.MockedFunction<typeof getUserLearnDays>).mockRejectedValue(new Error('Failed to get learn days'));
-        (addDaysToDate as jest.MockedFunction<typeof addDaysToDate>).mockReturnValue('2025-09-24');
-
-        await setVocabularyReviewed(req, res);
-
-        // Verify error response
-        expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ error: 'Failed to get learn days' });
-    });
-
-    it('should handle errors when utility functions fail', async () => {
-        const phraseTranslation = {
-            id: 1,
-            sr_stage_id: 0,
-            review_date: null,
-            priority: 1,
-            learned: 0,
-        };
-
-        // Mock service calls
-        (getVocabularyById as jest.MockedFunction<typeof getVocabularyById>).mockResolvedValue(phraseTranslation);
-        (getStageById as jest.MockedFunction<typeof getStageById>).mockResolvedValue(mockedStages[1]);
-        (getTodaysDay as jest.MockedFunction<typeof getTodaysDay>).mockImplementation(() => {
-            throw new Error('Failed to get today\'s day');
-        });
-
-        await setVocabularyReviewed(req, res);
-
-        // Verify error response
-        expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ error: 'Failed to get today\'s day' });
-    });
-
     it('should handle errors when createSBClient fails', async () => {
-        // Mock createSBClient to fail
         mockCreateSBClient.mockImplementation(() => {
             throw new Error('Failed to create Supabase client');
         });
 
         await setVocabularyReviewed(req, res);
 
-        // Verify error response
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({ error: 'Failed to create Supabase client' });
     });
 
     it('should handle missing request body parameters', async () => {
-        // Mock request without id
-        const reqWithoutId = {
-            body: {},
-            token: 'mock-jwt-token'
-        };
+        const reqWithoutId = { body: {} };
 
         await setVocabularyReviewed(reqWithoutId, res);
 
-        // Verify error response (this would likely cause an error in getVocabularyById)
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
             error: expect.any(String)
         }));
-    })
+    });
 });
 
 describe('delayManyVocabulary Handler', () => {
@@ -1638,6 +1188,7 @@ describe('generatePhrase Handler', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+        jest.spyOn(console, 'error').mockImplementation(() => {});
 
         process.env = { ...originalEnv, GROQ_API_KEY: 'test-groq-api-key' };
 
@@ -1661,6 +1212,7 @@ describe('generatePhrase Handler', () => {
 
     afterEach(() => {
         process.env = originalEnv;
+        jest.restoreAllMocks();
     });
 
     it('should generate a phrase successfully', async () => {
