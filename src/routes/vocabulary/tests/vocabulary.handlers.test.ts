@@ -1188,7 +1188,7 @@ describe('generatePhrase Handler', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
-        jest.spyOn(console, 'error').mockImplementation(() => {});
+        jest.spyOn(console, 'error').mockImplementation(() => { });
 
         process.env = { ...originalEnv, GROQ_API_KEY: 'test-groq-api-key' };
 
