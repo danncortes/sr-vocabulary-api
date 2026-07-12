@@ -5,6 +5,7 @@ import languagesRoutes from './routes/languages/languages.routes.js';
 import userRoutes from './routes/user/user.routes.js';
 import vocabularyRoutes from './routes/vocabulary/vocabulary.routes.js';
 import audioRoutes from './routes/audio/audio.routes.js';
+import translateRoutes from './routes/translate/translate.routes.js';
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ app.use('/vocabulary', vocabularyRoutes);
 app.use('/languages', languagesRoutes);
 app.use('/user', userRoutes)
 app.use('/audio', audioRoutes)
+app.use('/translate', translateRoutes)
 
 app.get('/', (req, res) => {
   res.send('User API is running!');

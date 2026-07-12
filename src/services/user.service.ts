@@ -1,5 +1,11 @@
 import { createSBClient } from '../supabaseClient.js';
 
+interface UserSettings {
+    system_lang: { id: number; locale_code: string };
+    learning_lang: { id: number; locale_code: string };
+    origin_lang: { id: number; locale_code: string };
+}
+
 export const getUserFromToken = async (token: string) => {
     const supabase = createSBClient(token);
 
@@ -22,7 +28,10 @@ export const getUserSettings = async (token: string) => {
 
     const result = await supabase
         .from('user_settings')
-        .select('*')
+        .select(`system_lang:languages!system_lang_id(id, locale_code),
+            learning_lang:languages!learning_lang_id(id, locale_code),
+            origin_lang:languages!origin_lang_id(id, locale_code)`
+        )
         .eq('user_id', user.id);
 
     if (result.error) {
@@ -33,5 +42,5 @@ export const getUserSettings = async (token: string) => {
         throw new Error('User settings not found');
     }
 
-    return result.data[0];
+    return result.data[0] as unknown as UserSettings;
 };

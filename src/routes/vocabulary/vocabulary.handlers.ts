@@ -1,6 +1,7 @@
 import path from "path";
 import fs, { writeFileSync } from "fs";
 import { SupabaseClient } from "@supabase/supabase-js";
+import Groq from "groq-sdk";
 import { createSBClient } from "../../supabaseClient.js";
 import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
 import {
@@ -16,7 +17,7 @@ import { getUserReviewDays } from "../../services/review-days.service.js";
 import { getUserLearnDays } from "../../services/learn-days.service.js";
 import { getUserFromToken, getUserSettings } from "../../services/user.service.js";
 
-let supabaseClientTemp: SupabaseClient<any, string, any> | null
+let supabaseClientTemp: SupabaseClient<any, string, any> | null;
 
 export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     try {
@@ -35,19 +36,19 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
             original:phrases!phrase_id (
                 id,
                 text,
-                audio_url
+                audio_url,
+                locale:languages!language_id(id, locale_code)
             ),
             translated:phrases!translated_phrase_id (
                 id,
                 text,
-                audio_url
+                audio_url,
+                locale:languages!language_id(id, locale_code)
             )
         `)
             .eq('user_id', user.id)
             .not('original', 'is', null)
             .not('translated', 'is', null)
-            .not('original.audio_url', 'is', null)
-            .not('translated.audio_url', 'is', null)
             .order('priority', { ascending: true })
             .order('review_date', { ascending: true })
             .order('id', { ascending: true });
@@ -65,11 +66,9 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
 
 export const setVocabularyReviewed = async (req: any, res: any): Promise<any> => {
     try {
-        const { id } = req.body;
-        const { token, user } = req;
+        const { body: { id }, token, user } = req;
         const supabase = createSBClient(token);
 
-        // Now with built-in error handling
         const vocabulary = await getVocabularyById(id, token);
 
         const { review_date, sr_stage_id, learned: isLearned } = vocabulary;
@@ -77,60 +76,35 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
         const newStageId = sr_stage_id + 1;
         const learned = newStageId === 6 ? 1 : isLearned;
 
-        // Use the new stages service function with built-in error handling
         const stage = await getStageById(newStageId, token);
         const { days: daysToAdd } = stage;
 
+        let newReviewDate: string | null = null;
         /* Normal behavior
         If New Stage is 1 and today is a learn day
         or Stage is > 1 and < 6 and today is a review day
         */
-        let newReviewDate: string | null = addDaysToDate(review_date, daysToAdd);
-        const todaysDay = getTodaysDay();
-        const reviewDays = await getUserReviewDays(token);
-        const learnDays = await getUserLearnDays(token);
 
-        if (reviewDays.length && learnDays.length) {
-            const isTodayLearnDay = learnDays.includes(todaysDay);
-            const isTodayReviewDay = reviewDays.includes(todaysDay);
-
-            if (newStageId === 1 && !isTodayLearnDay) {
-                const highestLearnDay = Math.max(...learnDays);
-                const nextLearnDay = getNextDateByDay(highestLearnDay);
-                newReviewDate = addDaysToDate(nextLearnDay, daysToAdd);
-            } else if (newStageId > 1 && newStageId < 6) {
-                // The review day passed
-                if (isDateLessThanToday(review_date)) {
-                    if (isTodayReviewDay) {
-                        newReviewDate = addDaysToDate('', daysToAdd);
-                    } else {
-                        const lowestReviewDay = Math.min(...reviewDays);
-                        const nextReviewDate = getNextDateByDay(lowestReviewDay);
-                        newReviewDate = addDaysToDate(nextReviewDate, daysToAdd);
-                    }
-                }
-            } else if (newStageId === 6) {
-                newReviewDate = null
-            }
-
-            const { data, error } = await supabase
-                .from('phrase_translations')
-                .update({
-                    sr_stage_id: newStageId,
-                    review_date: newReviewDate,
-                    learned: learned
-                })
-                .eq('user_id', user.id)
-                .eq('id', id).select();
-
-            if (error) {
-                return res.status(500).json({ error: error.message });
-            }
-
-            return res.status(200).send(data[0]);
-        } else {
-            return res.status(400).json({ error: reviewDays.length === 0 ? 'There are no Review Days' : 'There are no Learn Days' });
+        if (newStageId < 6) {
+            newReviewDate = isDateLessThanToday(review_date) ? addDaysToDate('', daysToAdd) : addDaysToDate(review_date, daysToAdd);
         }
+
+        const { data, error } = await supabase
+            .from('phrase_translations')
+            .update({
+                sr_stage_id: newStageId,
+                review_date: newReviewDate,
+                learned: learned
+            })
+            .eq('user_id', user.id)
+            .eq('id', id).select();
+
+        if (error) {
+            return res.status(500).json({ error: error.message });
+        }
+
+        return res.status(200).send(data[0]);
+
     } catch (error) {
         return res.status(500).json({ error: (error as Error).message });
     }
@@ -233,6 +207,7 @@ type SaveVocabularyParams = {
     translatedPhraseId: number;
     priority: number;
     userId: string;
+    reviewDate?: string | null;
 }
 
 const saveVocabulary = async (params: SaveVocabularyParams): Promise<number> => {
@@ -322,7 +297,7 @@ const getTranslatedVocabulary = (filePath: string): string[][] => {
 const processTranslatedPhrases = async (phrases: string[][], token: string, userId: string): Promise<number> => {
     const userSettings = await getUserSettings(token);
 
-    const { origin_lang_id, learning_lang_id } = userSettings;
+    const { origin_lang, learning_lang } = userSettings;
 
     let processedPhrasesIndex = 0;
     try {
@@ -332,8 +307,8 @@ const processTranslatedPhrases = async (phrases: string[][], token: string, user
             let [translated, priority] = translatedPhrase.split('#');
             priority = priority || '3'
             const [phraseId, translatedPhraseId] = await Promise.all([
-                savePhrase(originalPhrase, origin_lang_id, userId),
-                savePhrase(translated, learning_lang_id, userId)
+                savePhrase(originalPhrase, origin_lang.id, userId),
+                savePhrase(translated, learning_lang.id, userId)
             ])
             await saveVocabulary({ phraseId, translatedPhraseId, priority: Number(priority), userId });
             console.log("🚀 Saved...", `Original: ${originalPhrase}`, `Translated: ${translatedPhrase}`, `Priority: ${priority}`);
@@ -378,5 +353,273 @@ export const deleteManyVocabulary = async (req: any, res: any): Promise<any> => 
         return res.status(200).send(deletedIds);
     } catch (error) {
         return res.status(500).json({ error: error });
+    }
+}
+
+const renameAudioAndUpdatePhrase = async (
+    phraseId: number,
+    originalAudioUrl: string,
+    bucketName: string
+): Promise<void> => {
+    if (!originalAudioUrl) return;
+
+    const newAudioUrl = `${phraseId}.mp3`;
+
+    // Move (rename) the file in the bucket
+    const { error: moveError } = await supabaseClientTemp!.storage
+        .from(bucketName)
+        .move(originalAudioUrl, newAudioUrl);
+
+    if (moveError) {
+        throw new Error(`Failed to rename audio file: ${moveError.message}`);
+    }
+
+    // Update the phrase with the new audio_url
+    const { error: updateError } = await supabaseClientTemp!
+        .from('phrases')
+        .update({ audio_url: newAudioUrl })
+        .eq('id', phraseId);
+
+    if (updateError) {
+        throw new Error(`Failed to update phrase audio_url: ${updateError.message}`);
+    }
+};
+
+export const createVocabulary = async (req: any, res: any) => {
+    const { token, user, body: {
+        vocabulary
+    } } = req;
+
+    supabaseClientTemp = createSBClient(token);
+
+    try {
+        const { originalPhrase, translatedPhrase, reviewDate, priority } = vocabulary;
+
+        const [phraseId, translatedPhraseId] = await Promise.all([
+            savePhrase(originalPhrase.text, originalPhrase.localeId, user.id),
+            savePhrase(translatedPhrase.text, translatedPhrase.localeId, user.id)
+        ]);
+
+        // Rename audio files and update phrases with new audio_url
+        const bucket = process.env.SUPABASE_BUCKET || '';
+        await Promise.all([
+            renameAudioAndUpdatePhrase(phraseId, originalPhrase.audioUrl, bucket),
+            renameAudioAndUpdatePhrase(translatedPhraseId, translatedPhrase.audioUrl, bucket)
+        ]);
+
+        const vocabularyId = await saveVocabulary({ phraseId, translatedPhraseId, priority: Number(priority), userId: user.id, reviewDate });
+
+        // Fetch the complete vocabulary with all joined data
+        const { data: createdVocabulary, error } = await supabaseClientTemp!
+            .from('phrase_translations')
+            .select(`
+                id,
+                sr_stage_id,
+                review_date,
+                priority,
+                modified_at,
+                learned,
+                original:phrases!phrase_id (
+                    id,
+                    text,
+                    audio_url,
+                    locale:languages!language_id(id, locale_code)
+                ),
+                translated:phrases!translated_phrase_id (
+                    id,
+                    text,
+                    audio_url,
+                    locale:languages!language_id(id, locale_code)
+                )
+            `)
+            .eq('id', vocabularyId)
+            .single();
+
+        if (error) {
+            throw new Error(`Failed to fetch created vocabulary: ${error.message}`);
+        }
+
+        res.status(200).send(createdVocabulary);
+    } catch (error: any) {
+        res.status(400).send({ error: error.message });
+    } finally {
+        supabaseClientTemp = null;
+    }
+}
+
+const updatePhraseAudio = async (
+    phraseId: number,
+    newAudioUrl: string,
+    oldAudioUrl: string,
+    bucketName: string
+): Promise<string> => {
+    // If audio hasn't changed, return the existing one
+    if (newAudioUrl === oldAudioUrl) {
+        return oldAudioUrl;
+    }
+
+    const finalAudioUrl = `${phraseId}.mp3`;
+
+    // If there's a new audio file, rename it
+    if (newAudioUrl && newAudioUrl !== oldAudioUrl) {
+        // Delete the old audio file first (to free up the final name)
+        if (oldAudioUrl) {
+            await supabaseClientTemp!.storage
+                .from(bucketName)
+                .remove([oldAudioUrl]);
+        }
+
+        // Move the new audio file to the final name
+        const { error: moveError } = await supabaseClientTemp!.storage
+            .from(bucketName)
+            .move(newAudioUrl, finalAudioUrl);
+
+        if (moveError) {
+            throw new Error(`Failed to rename audio file: ${moveError.message}`);
+        }
+    }
+
+    return finalAudioUrl;
+};
+
+export const updateVocabulary = async (req: any, res: any) => {
+    const { token, user, body: { vocabulary } } = req;
+
+    supabaseClientTemp = createSBClient(token);
+
+    try {
+        const { vocabularyId, originalPhrase, translatedPhrase, reviewDate, priority } = vocabulary;
+        const bucket = process.env.SUPABASE_BUCKET || '';
+
+        // Get the existing vocabulary to get phrase IDs
+        const { data: existingVocabulary, error: fetchError } = await supabaseClientTemp!
+            .from('phrase_translations')
+            .select(`
+                phrase_id,
+                translated_phrase_id,
+                original:phrases!phrase_id (audio_url),
+                translated:phrases!translated_phrase_id (audio_url)
+            `)
+            .eq('id', vocabularyId)
+            .eq('user_id', user.id)
+            .single();
+
+        if (fetchError || !existingVocabulary) {
+            throw new Error('Vocabulary not found');
+        }
+
+        const originalPhraseId = existingVocabulary.phrase_id;
+        const translatedPhraseId = existingVocabulary.translated_phrase_id;
+        const oldOriginalAudio = (existingVocabulary.original as any)?.audio_url || '';
+        const oldTranslatedAudio = (existingVocabulary.translated as any)?.audio_url || '';
+
+        // Handle audio updates
+        const [newOriginalAudioUrl, newTranslatedAudioUrl] = await Promise.all([
+            updatePhraseAudio(originalPhraseId, originalPhrase.audioUrl, oldOriginalAudio, bucket),
+            updatePhraseAudio(translatedPhraseId, translatedPhrase.audioUrl, oldTranslatedAudio, bucket)
+        ]);
+
+        // Update phrases
+        await Promise.all([
+            supabaseClientTemp!
+                .from('phrases')
+                .update({
+                    text: originalPhrase.text,
+                    audio_url: newOriginalAudioUrl
+                })
+                .eq('id', originalPhraseId),
+            supabaseClientTemp!
+                .from('phrases')
+                .update({
+                    text: translatedPhrase.text,
+                    audio_url: newTranslatedAudioUrl
+                })
+                .eq('id', translatedPhraseId)
+        ]);
+
+        // Update vocabulary
+        await supabaseClientTemp!
+            .from('phrase_translations')
+            .update({
+                priority: Number(priority),
+                review_date: reviewDate || null
+            })
+            .eq('id', vocabularyId)
+            .eq('user_id', user.id);
+
+        // Fetch and return the updated vocabulary
+        const { data: updatedVocabulary, error } = await supabaseClientTemp!
+            .from('phrase_translations')
+            .select(`
+                id,
+                sr_stage_id,
+                review_date,
+                priority,
+                modified_at,
+                learned,
+                original:phrases!phrase_id (
+                    id,
+                    text,
+                    audio_url,
+                    locale:languages!language_id(id, locale_code)
+                ),
+                translated:phrases!translated_phrase_id (
+                    id,
+                    text,
+                    audio_url,
+                    locale:languages!language_id(id, locale_code)
+                )
+            `)
+            .eq('id', vocabularyId)
+            .single();
+
+        if (error) {
+            throw new Error(`Failed to fetch updated vocabulary: ${error.message}`);
+        }
+
+        res.status(200).send(updatedVocabulary);
+    } catch (error: any) {
+        res.status(400).send({ error: error.message });
+    } finally {
+        supabaseClientTemp = null;
+    }
+}
+
+export const generatePhrase = async (req: any, res: any): Promise<any> => {
+    try {
+        const { text, locale } = req.body;
+
+        if (!text || !locale) {
+            return res.status(400).json({
+                error: 'Missing required fields: text, locale'
+            });
+        }
+
+        const groqApiKey = process.env.GROQ_API_KEY;
+
+        if (!groqApiKey) {
+            return res.status(500).json({ error: 'Groq API key not configured' });
+        }
+
+        const groq = new Groq({ apiKey: groqApiKey });
+
+        const prompt = `Generate a phrase in ${locale} with around 50-60 characters using the word or phrase: "${text}". Only return the generated phrase, nothing else.`;
+
+        const completion = await groq.chat.completions.create({
+            messages: [
+                {
+                    role: "user",
+                    content: prompt
+                }
+            ],
+            model: "llama-3.3-70b-versatile",
+        });
+
+        const generatedPhrase = completion.choices[0]?.message?.content?.trim() || '';
+
+        return res.status(200).json({ generatedPhrase });
+    } catch (error: any) {
+        console.error('Phrase generation error:', error);
+        return res.status(500).json({ error: error.message || 'Phrase generation failed' });
     }
 }
