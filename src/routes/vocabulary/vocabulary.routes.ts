@@ -9,7 +9,8 @@ import {
     loadTranslatedVocabulary,
     deleteManyVocabulary,
     createVocabulary,
-    updateVocabulary
+    updateVocabulary,
+    generatePhrase
 } from './vocabulary.handlers.js';
 
 const router = Router();
@@ -24,4 +25,5 @@ router.get('/load-translated', authenticateToken, loadTranslatedVocabulary);
 router.post('/create', authenticateToken, createVocabulary);
 router.post('/update', authenticateToken, updateVocabulary);
 router.post('/delete', authenticateToken, deleteManyVocabulary);
+router.post('/generate', authenticateToken, generatePhrase);
 export default router;

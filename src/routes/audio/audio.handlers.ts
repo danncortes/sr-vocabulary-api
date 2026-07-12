@@ -1,11 +1,17 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createSBClient } from "../../supabaseClient.js";
 import { ElevenLabsClient } from 'elevenlabs';
-const { EVENLABS_API_KEY } = process.env;
 
-const evenlabsClient = new ElevenLabsClient({
-    apiKey: EVENLABS_API_KEY
-});
+let evenlabsClient: ElevenLabsClient | null = null;
+
+const getElevenLabsClient = (): ElevenLabsClient => {
+    if (!evenlabsClient) {
+        evenlabsClient = new ElevenLabsClient({
+            apiKey: process.env.ELEVENLABS_API_KEY
+        });
+    }
+    return evenlabsClient;
+};
 
 let supabaseTempClient: SupabaseClient<any, string, any> | null = null;
 let tempToken = '';
@@ -69,7 +75,7 @@ const generateAndSaveAudio = async (text: string, id: number): Promise<number> =
 
 const generateSpeech = async (text: string): Promise<Buffer> => {
     try {
-        const audio = await evenlabsClient.textToSpeech.convertAsStream(
+        const audio = await getElevenLabsClient().textToSpeech.convertAsStream(
             'IKne3meq5aSn9XLyUdCD',
             {
                 text,
@@ -77,15 +83,11 @@ const generateSpeech = async (text: string): Promise<Buffer> => {
             }
         );
 
-        // Collect all chunks into a buffer
         const chunks: Uint8Array[] = [];
         for await (const chunk of audio) {
             chunks.push(chunk);
         }
-        const audioBuffer = Buffer.concat(chunks);
-
-        return audioBuffer;
-        // Play the audio buffer using playMp3
+        return Buffer.concat(chunks);
     } catch (error) {
         console.error('Error generating speech:', error);
         throw error;
@@ -93,7 +95,6 @@ const generateSpeech = async (text: string): Promise<Buffer> => {
 }
 
 const saveAudio = async (audio: Buffer, id: number, bucketName: string = process.env.SUPABASE_BUCKET || '') => {
-
     try {
         const audioName = `${id}.mp3`;
 
@@ -143,7 +144,6 @@ export const generateAudioPhrases = async (req: any, res: any) => {
 
         const savedAudios = []
 
-        console.log("🚀 ~ generateAudioPhrases ~ data:", data![1])
         if (data) {
             for await (const phrase of data) {
                 const { original, translated } = phrase;

@@ -1,6 +1,7 @@
 import path from "path";
 import fs, { writeFileSync } from "fs";
 import { SupabaseClient } from "@supabase/supabase-js";
+import Groq from "groq-sdk";
 import { createSBClient } from "../../supabaseClient.js";
 import { addDaysToDate, getNextDateByDay, getTodaysDay, isDateLessThanToday } from "../../utils/dates.js";
 import {
@@ -16,7 +17,7 @@ import { getUserReviewDays } from "../../services/review-days.service.js";
 import { getUserLearnDays } from "../../services/learn-days.service.js";
 import { getUserFromToken, getUserSettings } from "../../services/user.service.js";
 
-let supabaseClientTemp: SupabaseClient<any, string, any> | null
+let supabaseClientTemp: SupabaseClient<any, string, any> | null;
 
 export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
     try {
@@ -48,8 +49,6 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
             .eq('user_id', user.id)
             .not('original', 'is', null)
             .not('translated', 'is', null)
-            .not('original.audio_url', 'is', null)
-            .not('translated.audio_url', 'is', null)
             .order('priority', { ascending: true })
             .order('review_date', { ascending: true })
             .order('id', { ascending: true });
@@ -67,8 +66,7 @@ export const getAllVocabulary = async (req: any, res: any): Promise<any> => {
 
 export const setVocabularyReviewed = async (req: any, res: any): Promise<any> => {
     try {
-        const { id } = req.body;
-        const { token, user } = req;
+        const { body: { id }, token, user } = req;
         const supabase = createSBClient(token);
 
         const vocabulary = await getVocabularyById(id, token);
@@ -81,56 +79,32 @@ export const setVocabularyReviewed = async (req: any, res: any): Promise<any> =>
         const stage = await getStageById(newStageId, token);
         const { days: daysToAdd } = stage;
 
+        let newReviewDate: string | null = null;
         /* Normal behavior
         If New Stage is 1 and today is a learn day
         or Stage is > 1 and < 6 and today is a review day
         */
-        let newReviewDate: string | null = addDaysToDate(review_date, daysToAdd);
-        const todaysDay = getTodaysDay();
-        const reviewDays = await getUserReviewDays(token);
-        const learnDays = await getUserLearnDays(token);
 
-        if (reviewDays.length && learnDays.length) {
-            const isTodayLearnDay = learnDays.includes(todaysDay);
-            const isTodayReviewDay = reviewDays.includes(todaysDay);
-
-            if (newStageId === 1 && !isTodayLearnDay) {
-                const highestLearnDay = Math.max(...learnDays);
-                const nextLearnDay = getNextDateByDay(highestLearnDay);
-                newReviewDate = addDaysToDate(nextLearnDay, daysToAdd);
-            } else if (newStageId > 1 && newStageId < 6) {
-                // The review day passed
-                if (isDateLessThanToday(review_date)) {
-                    if (isTodayReviewDay) {
-                        newReviewDate = addDaysToDate('', daysToAdd);
-                    } else {
-                        const lowestReviewDay = Math.min(...reviewDays);
-                        const nextReviewDate = getNextDateByDay(lowestReviewDay);
-                        newReviewDate = addDaysToDate(nextReviewDate, daysToAdd);
-                    }
-                }
-            } else if (newStageId === 6) {
-                newReviewDate = null
-            }
-
-            const { data, error } = await supabase
-                .from('phrase_translations')
-                .update({
-                    sr_stage_id: newStageId,
-                    review_date: newReviewDate,
-                    learned: learned
-                })
-                .eq('user_id', user.id)
-                .eq('id', id).select();
-
-            if (error) {
-                return res.status(500).json({ error: error.message });
-            }
-
-            return res.status(200).send(data[0]);
-        } else {
-            return res.status(400).json({ error: reviewDays.length === 0 ? 'There are no Review Days' : 'There are no Learn Days' });
+        if (newStageId < 6) {
+            newReviewDate = isDateLessThanToday(review_date) ? addDaysToDate('', daysToAdd) : addDaysToDate(review_date, daysToAdd);
         }
+
+        const { data, error } = await supabase
+            .from('phrase_translations')
+            .update({
+                sr_stage_id: newStageId,
+                review_date: newReviewDate,
+                learned: learned
+            })
+            .eq('user_id', user.id)
+            .eq('id', id).select();
+
+        if (error) {
+            return res.status(500).json({ error: error.message });
+        }
+
+        return res.status(200).send(data[0]);
+
     } catch (error) {
         return res.status(500).json({ error: (error as Error).message });
     }
@@ -608,5 +582,44 @@ export const updateVocabulary = async (req: any, res: any) => {
         res.status(400).send({ error: error.message });
     } finally {
         supabaseClientTemp = null;
+    }
+}
+
+export const generatePhrase = async (req: any, res: any): Promise<any> => {
+    try {
+        const { text, locale } = req.body;
+
+        if (!text || !locale) {
+            return res.status(400).json({
+                error: 'Missing required fields: text, locale'
+            });
+        }
+
+        const groqApiKey = process.env.GROQ_API_KEY;
+
+        if (!groqApiKey) {
+            return res.status(500).json({ error: 'Groq API key not configured' });
+        }
+
+        const groq = new Groq({ apiKey: groqApiKey });
+
+        const prompt = `Generate a phrase in ${locale} with around 50-60 characters using the word or phrase: "${text}". Only return the generated phrase, nothing else.`;
+
+        const completion = await groq.chat.completions.create({
+            messages: [
+                {
+                    role: "user",
+                    content: prompt
+                }
+            ],
+            model: "llama-3.3-70b-versatile",
+        });
+
+        const generatedPhrase = completion.choices[0]?.message?.content?.trim() || '';
+
+        return res.status(200).json({ generatedPhrase });
+    } catch (error: any) {
+        console.error('Phrase generation error:', error);
+        return res.status(500).json({ error: error.message || 'Phrase generation failed' });
     }
 }
