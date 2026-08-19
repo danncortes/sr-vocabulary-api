@@ -612,7 +612,7 @@ export const generatePhrase = async (req: any, res: any): Promise<any> => {
                     content: prompt
                 }
             ],
-            model: "llama-3.3-70b-versatile",
+            model: "openai/gpt-oss-120b",
         });
 
         const generatedPhrase = completion.choices[0]?.message?.content?.trim() || '';

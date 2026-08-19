@@ -1233,7 +1233,7 @@ describe('generatePhrase Handler', () => {
                 role: 'user',
                 content: 'Generate a phrase in German with around 50-60 characters using the word or phrase: "hello". Only return the generated phrase, nothing else.'
             }],
-            model: 'llama-3.3-70b-versatile'
+            model: 'openai/gpt-oss-120b'
         });
         expect(res.status).toHaveBeenCalledWith(200);
         expect(res.json).toHaveBeenCalledWith({ generatedPhrase: mockGeneratedPhrase });
