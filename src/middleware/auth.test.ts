@@ -13,6 +13,7 @@ describe('authenticateToken Middleware', () => {
     let mockNext: jest.MockedFunction<NextFunction>;
 
     beforeEach(async () => {
+        process.env.ALLOWED_USER_EMAILS = 'allowed@example.test';
         jest.resetModules();
         jest.resetAllMocks();
 
@@ -36,7 +37,7 @@ describe('authenticateToken Middleware', () => {
 
         // User service mock — critical for expectations
         mockGetUserFromToken = jest.fn() as jest.MockedFunction<(token: string) => Promise<any>>;
-        mockGetUserFromToken.mockResolvedValue({ id: 'user-1', email: 'u@example.com' });
+        mockGetUserFromToken.mockResolvedValue({ id: 'user-1', email: 'allowed@example.test' });
         jest.unstable_mockModule('../services/user.service.js', () => ({
             getUserFromToken: mockGetUserFromToken
         }));
@@ -53,7 +54,7 @@ describe('authenticateToken Middleware', () => {
 
             expect(mockGetUserFromToken).toHaveBeenCalledWith(validToken);
             expect((mockRequest as any).token).toBe(validToken);
-            expect((mockRequest as any).user).toEqual({ id: 'user-1', email: 'u@example.com' });
+            expect((mockRequest as any).user).toEqual({ id: 'user-1', email: 'allowed@example.test' });
             expect(mockNext).toHaveBeenCalledTimes(1);
             expect(mockResponse.status).not.toHaveBeenCalled();
             expect(mockResponse.json).not.toHaveBeenCalled();
@@ -68,6 +69,24 @@ describe('authenticateToken Middleware', () => {
             expect((mockRequest as any).token).toBe(validToken);
             expect(mockGetUserFromToken).toHaveBeenCalledWith(validToken);
             expect(mockNext).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('User allowlist', () => {
+        it('should return 403 for an authenticated user not on the allowlist', async () => {
+            mockRequest.headers = { authorization: 'Bearer valid-token' };
+            mockGetUserFromToken.mockResolvedValue({
+                id: 'user-2',
+                email: 'other@example.com'
+            });
+
+            await authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
+
+            expect(mockResponse.status).toHaveBeenCalledWith(403);
+            expect(mockResponse.json).toHaveBeenCalledWith({
+                error: 'Forbidden: user is not allowed'
+            });
+            expect(mockNext).not.toHaveBeenCalled();
         });
     });
 

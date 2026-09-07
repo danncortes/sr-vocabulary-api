@@ -1,6 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { getUserFromToken } from '../services/user.service.js'
 
+const allowedEmails = new Set(
+    (process.env.ALLOWED_USER_EMAILS || '')
+        .split(',')
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean)
+);
+
 // Extend the Request interface to include the token
 declare global {
     namespace Express {
@@ -27,6 +34,11 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
 
         // Use user service to resolve the user and catch expiration
         const user = await getUserFromToken(token);
+
+        if (!user.email || !allowedEmails.has(user.email.toLowerCase())) {
+            res.status(403).json({ error: 'Forbidden: user is not allowed' });
+            return;
+        }
 
         // Attach token and user to the request for downstream handlers
         req.token = token;
